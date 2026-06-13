@@ -1,0 +1,179 @@
+import Foundation
+import AppKit
+import UserNotifications
+import MeetingKit
+
+/// What the app is currently doing, surfaced in the menu bar.
+enum CaptureStatus: Equatable {
+    case idle
+    case recording(Meeting)
+    case processing(Meeting)
+
+    var label: String {
+        switch self {
+        case .idle: return "Idle"
+        case .recording(let m): return "Recording: \(m.title)"
+        case .processing(let m): return "Processing: \(m.title)"
+        }
+    }
+}
+
+/// The app coordinator: owns the calendar/detector/capture/processor wiring and
+/// the observable state the UI renders. Runs the "calendar AND app detected"
+/// auto-start loop, manages a single capture session, and kicks off
+/// post-meeting processing.
+@MainActor
+final class AppState: ObservableObject {
+    @Published private(set) var status: CaptureStatus = .idle
+    @Published private(set) var upcoming: [Meeting] = []
+    @Published private(set) var recordings: [MeetingRecording] = []
+    @Published var lastError: String?
+
+    let settings: AppSettings
+    let permissions: Permissions
+    private let calendar: CalendarWatcher
+    private let detector: MeetingDetector
+    private let store: MeetingStore
+
+    private var capture: CaptureSession?
+    private var pollTimer: Timer?
+    private var notifiedMeetingIDs: Set<String> = []
+
+    init() {
+        let calendar = CalendarWatcher()
+        self.calendar = calendar
+        self.detector = MeetingDetector()
+        self.settings = AppSettings()
+        self.permissions = Permissions(calendarWatcher: calendar)
+        // A failure here is unrecoverable (no place to store data); surface loudly.
+        self.store = try! MeetingStore()
+        self.recordings = store.allRecordings()
+    }
+
+    // MARK: - Lifecycle
+
+    /// Begin background polling: refresh the calendar and check auto-start every
+    /// 30 seconds. Cheap — it only lists events and checks running apps.
+    func start() {
+        refreshUpcoming()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+    }
+
+    private func tick() {
+        refreshUpcoming()
+        guard case .idle = status else { return }
+        for meeting in upcoming where detector.shouldAutoStart(meeting) {
+            notifyAndStart(meeting)
+            break
+        }
+    }
+
+    func refreshUpcoming() {
+        guard permissions.calendar == .granted else { return }
+        upcoming = calendar.upcomingMeetings()
+    }
+
+    // MARK: - Capture control
+
+    /// Auto-start path: notify the user that recording began, then start.
+    private func notifyAndStart(_ meeting: Meeting) {
+        guard !notifiedMeetingIDs.contains(meeting.id) else { return }
+        notifiedMeetingIDs.insert(meeting.id)
+        postNotification(
+            title: "Recording started",
+            body: "Meeting Assistant is transcribing “\(meeting.title)”."
+        )
+        Task { await startCapture(for: meeting) }
+    }
+
+    /// Start capturing a meeting (also the manual Start action).
+    func startCapture(for meeting: Meeting) async {
+        guard case .idle = status else { return }
+        let session = CaptureSession(meeting: meeting, store: store)
+        do {
+            try await session.start()
+            capture = session
+            status = .recording(meeting)
+        } catch {
+            lastError = "Failed to start capture: \(error.localizedDescription)"
+        }
+    }
+
+    /// Stop the active capture and run post-processing.
+    func stopCapture() async {
+        guard case .recording(let meeting) = status, let session = capture else { return }
+        do {
+            try await session.stop()
+            capture = nil
+            status = .processing(meeting)
+            await process(meeting)
+        } catch {
+            lastError = "Failed to stop capture: \(error.localizedDescription)"
+            status = .idle
+        }
+        recordings = store.allRecordings()
+    }
+
+    // MARK: - Post-processing
+
+    private func process(_ meeting: Meeting) async {
+        guard let recording = store.allRecordings().first(where: { $0.meeting.id == meeting.id }) else {
+            status = .idle
+            return
+        }
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: settings.makeTranscriber(),
+            summarizer: settings.makeSummarizer()
+        )
+        do {
+            _ = try await processor.process(recording)
+            postNotification(title: "Meeting ready", body: "Transcript and summary for “\(meeting.title)” are ready.")
+        } catch {
+            lastError = "Processing failed: \(error.localizedDescription)"
+        }
+        status = .idle
+        recordings = store.allRecordings()
+    }
+
+    /// Re-run the summary for a saved meeting (e.g. via Claude) on demand.
+    func resummarize(_ recording: MeetingRecording) async {
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: settings.makeTranscriber(),
+            summarizer: settings.makeSummarizer()
+        )
+        // Reuse the existing transcript instead of re-transcribing the audio.
+        guard let transcriptBody = store.transcript(for: recording.meeting.id) else { return }
+        do {
+            let summary = try await settings.makeSummarizer()
+                .summarize(transcript: transcriptBody, meetingTitle: recording.meeting.title)
+            try store.saveSummary(summary.markdown(), for: recording.meeting.id)
+            recordings = store.allRecordings()
+        } catch {
+            lastError = "Re-summarize failed: \(error.localizedDescription)"
+        }
+        _ = processor // silence unused in case future flows need it
+    }
+
+    func transcript(for recording: MeetingRecording) -> String? {
+        store.transcript(for: recording.meeting.id)
+    }
+
+    func summary(for recording: MeetingRecording) -> String? {
+        store.summary(for: recording.meeting.id)
+    }
+
+    // MARK: - Notifications
+
+    private func postNotification(title: String, body: String) {
+        guard permissions.notifications == .granted else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+}

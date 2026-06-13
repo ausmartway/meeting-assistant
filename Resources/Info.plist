@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Meeting Assistant</string>
+    <key>CFBundleDisplayName</key>
+    <string>Meeting Assistant</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.meetingassistant.app</string>
+    <key>CFBundleExecutable</key>
+    <string>MeetingAssistant</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <!-- Menu-bar app: no Dock icon by default. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- TCC usage strings (Screen Recording has no plist key; granted via prompt). -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Meeting Assistant records your microphone to transcribe what you say during meetings.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Meeting Assistant reads your calendar to detect when meetings start.</string>
+</dict>
+</plist>

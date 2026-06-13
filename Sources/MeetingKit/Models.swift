@@ -1,0 +1,127 @@
+import Foundation
+
+/// A video-conferencing platform we know how to capture and (best-effort) read
+/// the active speaker from.
+public enum MeetingProvider: String, Codable, Sendable, CaseIterable {
+    case zoom
+    case googleMeet
+    case microsoftTeams
+
+    /// Human-readable name for UI.
+    public var displayName: String {
+        switch self {
+        case .zoom: return "Zoom"
+        case .googleMeet: return "Google Meet"
+        case .microsoftTeams: return "Microsoft Teams"
+        }
+    }
+}
+
+/// A calendar meeting we may capture. Built from an EKEvent by `CalendarWatcher`,
+/// but kept free of EventKit types so it is easy to construct in tests.
+public struct Meeting: Identifiable, Codable, Sendable, Equatable {
+    public let id: String          // EKEvent.eventIdentifier (or a synthesized id)
+    public let title: String
+    public let startDate: Date
+    public let endDate: Date
+    public let provider: MeetingProvider?
+    public let joinURL: URL?
+
+    public init(
+        id: String,
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        provider: MeetingProvider?,
+        joinURL: URL?
+    ) {
+        self.id = id
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.provider = provider
+        self.joinURL = joinURL
+    }
+}
+
+/// Which audio source a transcript segment came from. The mic-vs-system split is
+/// always exact and gives us a reliable "you vs. others" first-level attribution.
+public enum AudioChannel: String, Codable, Sendable {
+    case microphone   // the local user ("Me")
+    case system       // remote participants (mixed)
+}
+
+/// One timestamped chunk of recognized speech, before speaker fusion.
+public struct TranscriptSegment: Codable, Sendable, Equatable {
+    public let start: TimeInterval   // seconds from meeting start
+    public let end: TimeInterval
+    public let text: String
+    public let channel: AudioChannel
+
+    public init(start: TimeInterval, end: TimeInterval, text: String, channel: AudioChannel) {
+        self.start = start
+        self.end = end
+        self.text = text
+        self.channel = channel
+    }
+}
+
+/// A single sample of who appeared to be the active speaker on screen at a moment
+/// in time, produced by `SpeakerSampler` roughly every few seconds during capture.
+public struct SpeakerSample: Codable, Sendable, Equatable {
+    public let timestamp: TimeInterval   // seconds from meeting start
+    public let speakerName: String?      // OCR'd name, or nil if none detected
+
+    public init(timestamp: TimeInterval, speakerName: String?) {
+        self.timestamp = timestamp
+        self.speakerName = speakerName
+    }
+}
+
+/// The ordered series of on-screen active-speaker samples for a meeting.
+public struct SpeakerTimeline: Codable, Sendable, Equatable {
+    public let samples: [SpeakerSample]
+
+    public init(samples: [SpeakerSample]) {
+        // Keep samples sorted by time so lookups can assume ordering.
+        self.samples = samples.sorted { $0.timestamp < $1.timestamp }
+    }
+}
+
+/// A transcript segment after speaker fusion: it now carries a resolved label.
+public struct LabeledSegment: Codable, Sendable, Equatable {
+    public let start: TimeInterval
+    public let end: TimeInterval
+    public let text: String
+    public let speaker: String   // "Me", an OCR'd name, or "Speaker N"
+
+    public init(start: TimeInterval, end: TimeInterval, text: String, speaker: String) {
+        self.start = start
+        self.end = end
+        self.text = text
+        self.speaker = speaker
+    }
+}
+
+/// Metadata persisted alongside a captured meeting's audio + timeline on disk.
+public struct MeetingRecording: Codable, Sendable, Equatable {
+    public let meeting: Meeting
+    public let recordedAt: Date
+    public let micAudioFile: String      // filename within the bundle
+    public let systemAudioFile: String
+    public let timeline: SpeakerTimeline
+
+    public init(
+        meeting: Meeting,
+        recordedAt: Date,
+        micAudioFile: String,
+        systemAudioFile: String,
+        timeline: SpeakerTimeline
+    ) {
+        self.meeting = meeting
+        self.recordedAt = recordedAt
+        self.micAudioFile = micAudioFile
+        self.systemAudioFile = systemAudioFile
+        self.timeline = timeline
+    }
+}
