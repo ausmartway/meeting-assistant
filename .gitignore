@@ -1,0 +1,27 @@
+# Credentials — never commit
+.env
+*.tfvars
+
+# macOS
+.DS_Store
+
+# Xcode / Swift
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+Package.resolved
+
+# Local model files (downloaded at runtime — large)
+Models/
+*.mlmodelc
+*.gguf
+
+# Captured meeting data (local recordings, transcripts)
+MeetingData/
