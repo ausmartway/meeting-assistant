@@ -75,7 +75,11 @@ Real on-device ML is wired in and builds (requires **full Xcode** for the
 Metal/CoreML toolchain — Command Line Tools alone can't compile these deps):
 
 - **WhisperKit** (`from: 1.0.0`) → on-device transcription, encoder on the Apple
-  Neural Engine. `WhisperKitTranscriber` in `Transcriber.swift`.
+  Neural Engine. `WhisperKitTranscriber` in `Transcriber.swift`. Uses
+  **multilingual** models with **language auto-detection**, so English and
+  Mandarin meetings (and reasonable code-switching) transcribe without manual
+  configuration. On-screen name OCR and the silence-hallucination filter are
+  Chinese-aware too.
 - **mlx-swift-examples / MLXLLM** (`from: 2.29.1`) → local summarization LLM
   (`Qwen2.5-3B-Instruct-4bit` by default). `MLXSummarizer` in `Summarizer.swift`.
 

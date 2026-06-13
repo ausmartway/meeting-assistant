@@ -6,14 +6,28 @@ import Foundation
 /// the transcript. Kept pure and table-driven so it is easy to extend and test.
 public enum HallucinationFilter {
 
-    /// Lowercased phrases that whisper commonly hallucinates on silence.
+    /// Phrases whisper commonly hallucinates on silence. English entries are
+    /// lowercased; Mandarin entries (case-insensitivity is a no-op for CJK) cover
+    /// the YouTube-subtitle artifacts the multilingual models emit over silence.
     private static let stockPhrases: Set<String> = [
+        // English
         "thanks for watching",
         "thanks for watching!",
         "thank you for watching",
         "please subscribe",
         "you",
         "bye",
+        // Mandarin (traditional + simplified)
+        "謝謝大家",
+        "谢谢大家",
+        "謝謝觀看",
+        "谢谢观看",
+        "請訂閱",
+        "请订阅",
+        "下次再見",
+        "下次再见",
+        "請不吝點贊 訂閱 轉發 打賞支持明鏡與點點欄目",
+        "明鏡與點點欄目",
     ]
 
     /// Return only the segments that look like genuine speech.
@@ -35,7 +49,8 @@ public enum HallucinationFilter {
         // punctuation noise.
         let normalized = trimmed.lowercased()
         if stockPhrases.contains(normalized) { return true }
-        let stripped = normalized.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+        // Strip trailing sentence punctuation, ASCII and CJK alike.
+        let stripped = normalized.trimmingCharacters(in: CharacterSet(charactersIn: ".!?。！？"))
         if stockPhrases.contains(stripped) { return true }
 
         return false

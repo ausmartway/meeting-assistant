@@ -128,6 +128,8 @@ public final class SpeakerSampler {
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
+            // Recognize both Chinese (simplified + traditional) and English names.
+            request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
             request.regionOfInterest = nameStrip
             let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
             try? handler.perform([request])
@@ -136,7 +138,13 @@ public final class SpeakerSampler {
 
     /// Pick the most name-like line: short, mostly letters, not a UI control word.
     static func bestName(from lines: [String]) -> String? {
-        let noise: Set<String> = ["mute", "unmute", "you", "stop video", "start video", "more", "chat", "raise hand"]
+        let noise: Set<String> = [
+            // English controls
+            "mute", "unmute", "you", "stop video", "start video", "more", "chat", "raise hand",
+            // Mandarin controls (traditional + simplified)
+            "靜音", "静音", "取消靜音", "取消静音", "停止視訊", "停止视频",
+            "開始視訊", "开始视频", "更多", "聊天", "舉手", "举手", "你", "我",
+        ]
         let candidates = lines
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { line in

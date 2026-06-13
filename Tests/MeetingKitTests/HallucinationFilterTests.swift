@@ -42,4 +42,16 @@ struct HallucinationFilterTests {
         let out = HallucinationFilter.clean(input)
         #expect(out.map(\.text) == ["First point", "Second point", "Third point"])
     }
+
+    @Test("drops common Mandarin whisper hallucinations, incl. trailing CJK punctuation")
+    func dropsMandarinHallucinations() {
+        let input = [
+            seg("謝謝大家"),
+            seg("謝謝觀看。"),
+            seg("請不吝點贊 訂閱 轉發 打賞支持明鏡與點點欄目"),
+            seg("我們下週開會討論預算"),
+        ]
+        let out = HallucinationFilter.clean(input)
+        #expect(out.map(\.text) == ["我們下週開會討論預算"])
+    }
 }

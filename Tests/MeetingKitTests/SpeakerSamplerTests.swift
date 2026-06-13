@@ -26,4 +26,10 @@ struct SpeakerSamplerTests {
     func emptyInput() {
         #expect(SpeakerSampler.bestName(from: []) == nil)
     }
+
+    @Test("picks a Chinese name over Chinese UI control words")
+    func picksChineseName() {
+        let lines = ["静音", "王伟", "停止视频"]
+        #expect(SpeakerSampler.bestName(from: lines) == "王伟")
+    }
 }

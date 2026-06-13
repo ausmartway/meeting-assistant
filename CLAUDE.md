@@ -66,6 +66,18 @@ CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → auto-start
   degrades to "Speaker". Treat any feature depending on named remote attribution
   as best-effort.
 
+### Languages
+
+Transcription is **multilingual with auto-detection** (English + Mandarin):
+`TranscriptionModel` cases are multilingual Whisper variants (no `.en`), and
+`WhisperKitTranscriber` passes `DecodingOptions(language: nil, detectLanguage:
+true)`. Chinese-awareness also lives in `SpeakerSampler` (OCR
+`recognitionLanguages` include `zh-Hans`/`zh-Hant`; `bestName` filters CJK UI
+words) and `HallucinationFilter` (Mandarin stock phrases + CJK punctuation
+stripping). The **UI is English-only** — no string localization yet. Summaries
+follow whatever language the LLM produces (prompt is English; not forced to
+Chinese).
+
 ### ML backends are swappable behind protocols — go through `Backends`
 
 `Transcribing` and `Summarizing` are protocols with real implementations

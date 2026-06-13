@@ -1,17 +1,20 @@
 import Foundation
 
-/// Whisper model size. Larger = more accurate but slower / more memory.
-/// Defaults to `.smallEN` — the sweet spot on an M1 Pro per the design notes.
+/// Whisper model size. All entries are **multilingual** (no `.en` variants) so
+/// the recognizer can handle Mandarin as well as English with language
+/// auto-detection. Larger = more accurate but slower / more memory.
+/// Defaults to `.largeTurbo` — strong Mandarin accuracy, still fast on the M1
+/// Pro's Neural Engine.
 public enum TranscriptionModel: String, Codable, Sendable, CaseIterable {
-    case baseEN = "base.en"
-    case smallEN = "small.en"
+    case small = "small"
     case medium = "medium"
+    case largeTurbo = "large-v3-turbo"
 
     public var displayName: String {
         switch self {
-        case .baseEN: return "Base (fastest, ~250 MB)"
-        case .smallEN: return "Small (balanced, ~1 GB)"
-        case .medium: return "Medium (most accurate, ~2.7 GB)"
+        case .small: return "Small (fastest, ~0.5 GB)"
+        case .medium: return "Medium (balanced, ~1.5 GB)"
+        case .largeTurbo: return "Large v3 Turbo (best, multilingual, ~1.6 GB)"
         }
     }
 }
@@ -50,13 +53,16 @@ import WhisperKit
 public struct WhisperKitTranscriber: Transcribing {
     private let model: TranscriptionModel
 
-    public init(model: TranscriptionModel = .smallEN) {
+    public init(model: TranscriptionModel = .largeTurbo) {
         self.model = model
     }
 
     public func transcribe(audioFile: URL, channel: AudioChannel) async throws -> [TranscriptSegment] {
         let pipe = try await WhisperKit(model: model.rawValue)
-        let results = try await pipe.transcribe(audioPath: audioFile.path)
+        // language: nil + detectLanguage: true → auto-detect per meeting
+        // (handles English, Mandarin, and reasonable code-switching).
+        let options = DecodingOptions(language: nil, detectLanguage: true)
+        let results = try await pipe.transcribe(audioPath: audioFile.path, decodeOptions: options)
         let raw = results.flatMap { result in
             result.segments.map {
                 TranscriptSegment(

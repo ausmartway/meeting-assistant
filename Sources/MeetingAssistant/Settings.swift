@@ -42,7 +42,7 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         self.transcriptionModel = TranscriptionModel(
             rawValue: defaults.string(forKey: Keys.transcriptionModel) ?? ""
-        ) ?? .smallEN
+        ) ?? .largeTurbo
         self.summaryEngine = SummaryEngine(
             rawValue: defaults.string(forKey: Keys.summaryEngine) ?? ""
         ) ?? .local
