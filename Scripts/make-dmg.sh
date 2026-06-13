@@ -16,6 +16,13 @@ VOL_NAME="Meeting Assistant"
 APP_PATH="build/${APP_NAME}.app"
 DMG_PATH="build/MeetingAssistant.dmg"
 
+# 0. Eject any previously-mounted copy of this volume so a stale DMG copy can't
+#    linger in /Volumes and get launched instead of the installed app.
+if [[ -d "/Volumes/${VOL_NAME}" ]]; then
+  echo "▸ Ejecting previously-mounted /Volumes/${VOL_NAME}…"
+  hdiutil detach "/Volumes/${VOL_NAME}" >/dev/null 2>&1 || true
+fi
+
 # 1. Build the signed .app (release).
 ./Scripts/build-app.sh
 
