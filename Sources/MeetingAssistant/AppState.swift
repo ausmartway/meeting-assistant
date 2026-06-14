@@ -29,6 +29,11 @@ final class AppState: ObservableObject {
     @Published private(set) var recordings: [MeetingRecording] = []
     @Published var lastError: String?
 
+    /// Post-meeting progress for the UI: a 0...1 fraction during model download
+    /// (nil otherwise) and a stage label ("Downloading model…", "Transcribing…").
+    @Published private(set) var progressFraction: Double?
+    @Published private(set) var progressPhase: String?
+
     let settings: AppSettings
     let permissions: Permissions
     private let calendar: CalendarWatcher
@@ -138,12 +143,20 @@ final class AppState: ObservableObject {
             transcriber: settings.makeTranscriber(),
             summarizer: settings.makeSummarizer()
         )
+        let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
+            Task { @MainActor in
+                self?.progressFraction = fraction
+                self?.progressPhase = phase
+            }
+        }
         do {
-            _ = try await processor.process(recording)
+            _ = try await processor.process(recording, progress: progress)
             postNotification(title: "Meeting ready", body: "Transcript and summary for “\(meeting.title)” are ready.")
         } catch {
             lastError = "Processing failed: \(error.localizedDescription)"
         }
+        progressFraction = nil
+        progressPhase = nil
         status = .idle
         recordings = store.allRecordings()
     }

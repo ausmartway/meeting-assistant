@@ -15,16 +15,25 @@ public final class MeetingProcessor {
         self.summarizer = summarizer
     }
 
+    /// Progress callback for the UI: `fraction` is 0...1 during model download
+    /// (nil otherwise), `phase` is a human-readable stage label.
+    public typealias ProcessProgress = @Sendable (_ fraction: Double?, _ phase: String) -> Void
+
     /// Process one recording end-to-end, writing `transcript.md` and `summary.md`.
     @discardableResult
-    public func process(_ recording: MeetingRecording) async throws -> (transcript: String, summary: MeetingSummary) {
+    public func process(
+        _ recording: MeetingRecording,
+        progress: ProcessProgress? = nil
+    ) async throws -> (transcript: String, summary: MeetingSummary) {
         let dir = try store.directory(for: recording.meeting.id)
         let micURL = dir.appendingPathComponent(recording.micAudioFile)
         let systemURL = dir.appendingPathComponent(recording.systemAudioFile)
 
         // 1. Transcribe each channel (carrying the channel through onto segments).
-        async let micSegments = transcriber.transcribe(audioFile: micURL, channel: .microphone)
-        async let systemSegments = transcriber.transcribe(audioFile: systemURL, channel: .system)
+        //    The transcriber serializes its shared model download/load internally.
+        let onProgress: TranscribeProgressHandler = { p in progress?(p.fraction, p.phase) }
+        async let micSegments = transcriber.transcribe(audioFile: micURL, channel: .microphone, progress: onProgress)
+        async let systemSegments = transcriber.transcribe(audioFile: systemURL, channel: .system, progress: onProgress)
         let allSegments = try await (micSegments + systemSegments)
             .sorted { $0.start < $1.start }
 
@@ -37,6 +46,7 @@ public final class MeetingProcessor {
         try store.saveTranscript(transcript, for: recording.meeting.id)
 
         // 4. Summarize and persist.
+        progress?(nil, "Summarizing…")
         let body = TranscriptFormatter.transcriptBody(labeled)
         let summary = try await summarizer.summarize(transcript: body, meetingTitle: recording.meeting.title)
         try store.saveSummary(summary.markdown(), for: recording.meeting.id)

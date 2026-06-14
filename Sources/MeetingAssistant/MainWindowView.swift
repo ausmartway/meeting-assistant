@@ -70,6 +70,25 @@ private struct MeetingDetailView: View {
             }
             .padding()
 
+            // Live progress while this meeting is being processed.
+            if case .processing(let m) = state.status, m.id == recording.meeting.id {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let fraction = state.progressFraction {
+                        ProgressView(value: fraction) {
+                            Text(state.progressPhase ?? "Processing…").font(.caption)
+                        }
+                        Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(state.progressPhase ?? "Processing…").font(.caption)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+
             TabView {
                 ScrollView { MarkdownText(state.summary(for: recording) ?? "_No summary yet._") }
                     .tabItem { Text("Summary") }

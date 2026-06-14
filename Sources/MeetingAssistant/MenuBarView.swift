@@ -54,7 +54,19 @@ struct MenuBarView: View {
                 Label("Stop & Process", systemImage: "stop.circle")
             }
         case .processing:
-            HStack { ProgressView().controlSize(.small); Text("Processing…") }
+            VStack(alignment: .leading, spacing: 6) {
+                if let fraction = state.progressFraction {
+                    ProgressView(value: fraction) {
+                        Text(state.progressPhase ?? "Processing…").font(.caption)
+                    }
+                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(state.progressPhase ?? "Processing…").font(.caption)
+                    }
+                }
+            }
         case .idle:
             VStack(alignment: .leading, spacing: 8) {
                 // Start the next calendared meeting, when there is one.
