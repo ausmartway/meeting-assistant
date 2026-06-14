@@ -146,7 +146,8 @@ public actor WhisperKitTranscriber: Transcribing {
                 TranscriptSegment(
                     start: TimeInterval($0.start),
                     end: TimeInterval($0.end),
-                    text: $0.text.trimmingCharacters(in: .whitespaces),
+                    // Strip WhisperKit's <|...|> special/timestamp tokens.
+                    text: WhisperTextCleaner.clean($0.text),
                     channel: channel
                 )
             }

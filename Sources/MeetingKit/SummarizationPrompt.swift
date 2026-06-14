@@ -5,19 +5,38 @@ import Foundation
 /// share identical prompting/parsing — and so the parsing is unit-testable.
 public enum SummarizationPrompt {
 
-    /// Construct the instruction prompt for a transcript.
-    public static func build(transcript: String, title: String) -> String {
-        """
+    /// Construct the instruction prompt for a transcript. Very long transcripts
+    /// are truncated (keeping the head and tail) so the local model's context /
+    /// memory stays bounded — an unbounded prompt can OOM-kill the app.
+    public static func build(
+        transcript: String,
+        title: String,
+        maxTranscriptChars: Int = 24_000
+    ) -> String {
+        let body = truncate(transcript, max: maxTranscriptChars)
+        return """
         You are summarizing the meeting titled "\(title)".
 
         Read the transcript below and respond with ONLY a JSON object of the form:
         {"summary": "<2-4 sentence summary>", "actionItems": ["<owner: task>", ...]}
 
-        Do not include any text outside the JSON.
+        Do not include any text outside the JSON. The summary and action items
+        should be written in the same language as the transcript.
 
         Transcript:
-        \(transcript)
+        \(body)
         """
+    }
+
+    /// Keep the beginning (context) and the end (decisions / action items) when a
+    /// transcript exceeds `max`, dropping the middle.
+    static func truncate(_ text: String, max: Int) -> String {
+        guard text.count > max else { return text }
+        let headCount = Int(Double(max) * 0.6)
+        let tailCount = max - headCount
+        let head = text.prefix(headCount)
+        let tail = text.suffix(tailCount)
+        return "\(head)\n\n[… transcript truncated for length …]\n\n\(tail)"
     }
 
     /// Parse a model reply into a `MeetingSummary`. Tolerates a markdown code

@@ -40,4 +40,21 @@ struct SummarizationPromptTests {
         #expect(prompt.contains("Standup"))
         #expect(prompt.lowercased().contains("json"))
     }
+
+    @Test("truncates an over-long transcript (head + tail) to bound model memory")
+    func truncatesLongTranscript() {
+        let head = String(repeating: "A", count: 5000)
+        let tail = String(repeating: "Z", count: 5000)
+        let prompt = SummarizationPrompt.build(transcript: head + tail, title: "T", maxTranscriptChars: 1000)
+        #expect(prompt.contains("truncated"))
+        #expect(prompt.contains("AAA"))   // keeps the beginning
+        #expect(prompt.contains("ZZZ"))   // and the end (where action items often are)
+        #expect(prompt.count < 2000)
+    }
+
+    @Test("does not truncate a transcript within the limit")
+    func keepsShortTranscript() {
+        let prompt = SummarizationPrompt.build(transcript: "short body", title: "T", maxTranscriptChars: 1000)
+        #expect(!prompt.contains("truncated"))
+    }
 }

@@ -110,10 +110,10 @@ private struct MeetingDetailView: View {
             }
 
             TabView {
-                ScrollView { MarkdownText(state.summary(for: recording) ?? "_No summary yet._") }
-                    .tabItem { Text("Summary") }
                 ScrollView { MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._") }
                     .tabItem { Text("Transcript") }
+                ScrollView { MarkdownText(state.summary(for: recording) ?? "_No summary yet._") }
+                    .tabItem { Text("Summary") }
             }
         }
     }
