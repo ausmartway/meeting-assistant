@@ -88,6 +88,16 @@ final class AppState: ObservableObject {
         Task { await startCapture(for: meeting) }
     }
 
+    /// Start an ad-hoc capture with no calendar entry — the user clicked "Start"
+    /// for a meeting that isn't (or isn't yet) on their calendar. Labels it with
+    /// the detected provider when a native client is running.
+    func startAdHocCapture() async {
+        guard case .idle = status else { return }
+        let provider = detector.firstRunningProvider()
+        let meeting = Meeting.adHoc(id: "adhoc-\(UUID().uuidString)", provider: provider, start: Date())
+        await startCapture(for: meeting)
+    }
+
     /// Start capturing a meeting (also the manual Start action).
     func startCapture(for meeting: Meeting) async {
         guard case .idle = status else { return }

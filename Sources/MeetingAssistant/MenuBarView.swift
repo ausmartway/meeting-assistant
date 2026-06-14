@@ -56,14 +56,21 @@ struct MenuBarView: View {
         case .processing:
             HStack { ProgressView().controlSize(.small); Text("Processing…") }
         case .idle:
-            if let next = state.upcoming.first {
-                Button {
-                    Task { await state.startCapture(for: next) }
-                } label: {
-                    Label("Start Recording", systemImage: "record.circle")
+            VStack(alignment: .leading, spacing: 8) {
+                // Start the next calendared meeting, when there is one.
+                if let next = state.upcoming.first {
+                    Button {
+                        Task { await state.startCapture(for: next) }
+                    } label: {
+                        Label("Record “\(next.title)”", systemImage: "record.circle")
+                    }
                 }
-            } else {
-                Text("No upcoming meetings").font(.caption).foregroundStyle(.secondary)
+                // Always available: record a meeting with no calendar entry.
+                Button {
+                    Task { await state.startAdHocCapture() }
+                } label: {
+                    Label("Record Ad-hoc Meeting", systemImage: "record.circle.fill")
+                }
             }
         }
     }

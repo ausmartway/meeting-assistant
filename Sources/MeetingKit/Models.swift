@@ -42,6 +42,26 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
         self.provider = provider
         self.joinURL = joinURL
     }
+
+    /// Build a synthetic meeting for an **ad-hoc** capture — one the user starts
+    /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
+    /// so this stays pure and testable; the title reflects the detected provider
+    /// when known.
+    public static func adHoc(
+        id: String,
+        provider: MeetingProvider?,
+        start: Date,
+        duration: TimeInterval = 2 * 60 * 60
+    ) -> Meeting {
+        Meeting(
+            id: id,
+            title: provider.map { "\($0.displayName) meeting" } ?? "Ad-hoc meeting",
+            startDate: start,
+            endDate: start.addingTimeInterval(duration),
+            provider: provider,
+            joinURL: nil
+        )
+    }
 }
 
 /// Which audio source a transcript segment came from. The mic-vs-system split is

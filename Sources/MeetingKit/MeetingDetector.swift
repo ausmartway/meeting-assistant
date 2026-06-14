@@ -40,6 +40,17 @@ public final class MeetingDetector {
         }
     }
 
+    /// Best guess at which provider is live right now, for ad-hoc captures with no
+    /// calendar entry. Prefers the native clients (unambiguous); returns nil when
+    /// only a browser is running, since a browser alone doesn't identify Meet vs
+    /// Teams vs something else. The capture works regardless — this only labels it.
+    public func firstRunningProvider() -> MeetingProvider? {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        if !running.isDisjoint(with: Self.zoomBundleIDs) { return .zoom }
+        if !running.isDisjoint(with: Self.teamsBundleIDs) { return .microsoftTeams }
+        return nil
+    }
+
     /// True when both conditions for auto-start hold: the meeting has started
     /// (within a small grace window) and its client is running.
     public func shouldAutoStart(_ meeting: Meeting, now: Date = Date(), grace: TimeInterval = 120) -> Bool {
