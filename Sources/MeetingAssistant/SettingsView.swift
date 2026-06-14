@@ -1,11 +1,9 @@
 import SwiftUI
 import MeetingKit
 
-/// Settings: permissions status + re-grant, model selection, and the optional
-/// Claude API key.
+/// Settings: permissions status + re-grant, and transcription model selection.
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
-    @State private var apiKeyField: String = ""
 
     var body: some View {
         TabView {
@@ -70,38 +68,7 @@ struct SettingsView: View {
                 }
             }
 
-            Picker("Summary engine", selection: Binding(
-                get: { state.settings.summaryEngine },
-                set: { state.settings.summaryEngine = $0 }
-            )) {
-                ForEach(SummaryEngine.allCases) { Text($0.displayName).tag($0) }
-            }
-            .onChange(of: state.settings.summaryEngine) {
-                // Switching to local triggers the summary-model download; Claude needs none.
-                Task { await state.prepareModel() }
-            }
-
-            if state.settings.summaryEngine == .claude {
-                TextField("Claude model", text: Binding(
-                    get: { state.settings.claudeModel },
-                    set: { state.settings.claudeModel = $0 }
-                ))
-
-                HStack {
-                    SecureField("Claude API key", text: $apiKeyField)
-                    Button("Save") {
-                        state.settings.setClaudeKey(apiKeyField)
-                        apiKeyField = ""
-                    }
-                }
-                Label(
-                    state.settings.hasClaudeKey ? "Key saved in Keychain" : "No key set",
-                    systemImage: state.settings.hasClaudeKey ? "key.fill" : "key"
-                )
-                .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Text("Transcription runs 100% on-device. Audio never leaves your Mac; only transcript text is sent when using Claude.")
+            Text("Transcription runs 100% on-device. Audio never leaves your Mac.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()

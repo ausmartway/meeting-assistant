@@ -2,8 +2,8 @@ import Foundation
 
 /// Strips WhisperKit's special / timestamp tokens (`<|startoftranscript|>`,
 /// `<|zh|>`, `<|transcribe|>`, `<|12.34|>`, …) out of a segment's raw text so the
-/// transcript reads naturally. These tokens otherwise appear inline and also
-/// massively inflate the text sent to the summarizer.
+/// transcript reads naturally. These tokens otherwise appear inline in the
+/// rendered transcript.
 public enum WhisperTextCleaner {
 
     public static func clean(_ text: String) -> String {

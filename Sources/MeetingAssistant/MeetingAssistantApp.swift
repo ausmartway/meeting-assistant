@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// App entry point. A menu-bar presence for status and quick control, plus a
-/// regular window for browsing transcripts and summaries and managing settings.
+/// regular window for browsing transcripts and managing settings.
 @main
 struct MeetingAssistantApp: App {
     @StateObject private var state = AppState()

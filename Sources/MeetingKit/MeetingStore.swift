@@ -8,8 +8,7 @@ import Foundation
 ///     ├── recording.json     (MeetingRecording metadata + speaker timeline)
 ///     ├── mic.wav            (local user audio)
 ///     ├── system.wav         (remote participants audio)
-///     ├── transcript.md      (written after processing)
-///     └── summary.md         (written after processing)
+///     └── transcript.md      (written after processing)
 public final class MeetingStore {
     private let root: URL
     private let fileManager: FileManager
@@ -54,12 +53,6 @@ public final class MeetingStore {
         try markdown.write(to: dir.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
     }
 
-    /// Write the summary markdown.
-    public func saveSummary(_ markdown: String, for meetingID: String) throws {
-        let dir = try directory(for: meetingID)
-        try markdown.write(to: dir.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
-    }
-
     /// All saved recordings, newest first.
     public func allRecordings() -> [MeetingRecording] {
         let decoder = JSONDecoder()
@@ -78,12 +71,6 @@ public final class MeetingStore {
     /// Load the transcript markdown for a meeting, if present.
     public func transcript(for meetingID: String) -> String? {
         let file = root.appendingPathComponent(sanitize(meetingID)).appendingPathComponent("transcript.md")
-        return try? String(contentsOf: file, encoding: .utf8)
-    }
-
-    /// Load the summary markdown for a meeting, if present.
-    public func summary(for meetingID: String) -> String? {
-        let file = root.appendingPathComponent(sanitize(meetingID)).appendingPathComponent("summary.md")
         return try? String(contentsOf: file, encoding: .utf8)
     }
 

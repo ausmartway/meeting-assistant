@@ -54,7 +54,6 @@ final class AppState: ObservableObject {
     /// Shared, prepared transcriber reused across all processing so the model is
     /// downloaded/loaded exactly once (at launch) rather than per meeting.
     private var transcriber: Transcribing
-    private var summarizer: Summarizing
 
     init() {
         let calendar = CalendarWatcher()
@@ -67,7 +66,6 @@ final class AppState: ObservableObject {
         self.store = try! MeetingStore()
         self.recordings = store.allRecordings()
         self.transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
-        self.summarizer = settings.makeSummarizer()
     }
 
     // MARK: - Lifecycle
@@ -89,24 +87,14 @@ final class AppState: ObservableObject {
         modelReady = false
         modelStatusText = "Preparing model…"
         transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
-        summarizer = settings.makeSummarizer()
         let tHandler: TranscribeProgressHandler = { [weak self] p in
             Task { @MainActor in
                 self?.modelDownloadFraction = p.fraction
                 self?.modelStatusText = p.phase
             }
         }
-        let sHandler: SummarizeProgressHandler = { [weak self] p in
-            Task { @MainActor in
-                self?.modelDownloadFraction = p.fraction
-                self?.modelStatusText = p.phase
-            }
-        }
         do {
-            // Transcription model first, then the (local) summary model. Claude /
-            // stub summarizers prepare() as a no-op, so no extra download there.
             try await transcriber.prepare(progress: tHandler)
-            try await summarizer.prepare(progress: sHandler)
             modelReady = true
             modelStatusText = "Model ready"
         } catch {
@@ -189,11 +177,7 @@ final class AppState: ObservableObject {
             status = .idle
             return
         }
-        let processor = MeetingProcessor(
-            store: store,
-            transcriber: transcriber,
-            summarizer: summarizer
-        )
+        let processor = MeetingProcessor(store: store, transcriber: transcriber)
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
                 self?.progressFraction = fraction
@@ -202,7 +186,7 @@ final class AppState: ObservableObject {
         }
         do {
             _ = try await processor.process(recording, progress: progress)
-            postNotification(title: "Meeting ready", body: "Transcript and summary for “\(meeting.title)” are ready.")
+            postNotification(title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
         } catch {
             lastError = "Processing failed: \(error.localizedDescription)"
         }
@@ -212,9 +196,8 @@ final class AppState: ObservableObject {
         recordings = store.allRecordings()
     }
 
-    /// Re-run the full pipeline (transcribe → fuse → summarize) for a saved
-    /// recording. Recovers a meeting whose processing failed (e.g. a missing
-    /// model) — the audio + speaker timeline are already on disk.
+    /// Re-run the transcription pipeline for a saved recording. Recovers a meeting
+    /// whose processing failed — the audio + speaker timeline are already on disk.
     func reprocess(_ recording: MeetingRecording) async {
         guard case .idle = status else { return }
         lastError = nil
@@ -223,38 +206,8 @@ final class AppState: ObservableObject {
         recordings = store.allRecordings()
     }
 
-    /// Re-run the summary for a saved meeting (e.g. via Claude) on demand.
-    func resummarize(_ recording: MeetingRecording) async {
-        guard case .idle = status else { return }
-        // Reuse the existing transcript instead of re-transcribing the audio.
-        guard let transcriptBody = store.transcript(for: recording.meeting.id) else { return }
-        status = .processing(recording.meeting)
-        progressPhase = "Summarizing…"
-        do {
-            // Map-reduce so re-summarizing a long meeting stays memory-bounded too.
-            let summary = try await SummaryRunner.run(
-                transcript: transcriptBody,
-                title: recording.meeting.title,
-                summarizer: summarizer,
-                progress: { [weak self] done, total in
-                    Task { @MainActor in self?.progressPhase = "Summarizing… (\(done)/\(total))" }
-                }
-            )
-            try store.saveSummary(summary.markdown(), for: recording.meeting.id)
-            recordings = store.allRecordings()
-        } catch {
-            lastError = "Re-summarize failed: \(error.localizedDescription)"
-        }
-        progressPhase = nil
-        status = .idle
-    }
-
     func transcript(for recording: MeetingRecording) -> String? {
         store.transcript(for: recording.meeting.id)
-    }
-
-    func summary(for recording: MeetingRecording) -> String? {
-        store.summary(for: recording.meeting.id)
     }
 
     // MARK: - Notifications

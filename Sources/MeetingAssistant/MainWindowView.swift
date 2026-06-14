@@ -2,7 +2,7 @@ import SwiftUI
 import MeetingKit
 
 /// Main window: a sidebar list of past meetings and a detail pane showing the
-/// speaker-labeled transcript and the AI summary.
+/// speaker-labeled transcript.
 struct MainWindowView: View {
     @EnvironmentObject private var state: AppState
     @State private var selection: String?
@@ -27,7 +27,7 @@ struct MainWindowView: View {
                 ContentUnavailableViewCompat(
                     title: "No meeting selected",
                     systemImage: "doc.text.magnifyingglass",
-                    description: "Pick a meeting to see its transcript and summary."
+                    description: "Pick a meeting to see its transcript."
                 )
             }
         }
@@ -58,7 +58,7 @@ struct MainWindowView: View {
     }
 }
 
-/// Detail pane with Summary / Transcript tabs.
+/// Detail pane showing the speaker-labeled transcript.
 private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
@@ -75,21 +75,12 @@ private struct MeetingDetailView: View {
                 Button {
                     Task { await state.reprocess(recording) }
                 } label: {
-                    Label("Re-process", systemImage: "arrow.clockwise")
+                    Label("Re-transcribe", systemImage: "arrow.clockwise")
                 }
                 .disabled(!state.modelReady)
                 .help(state.modelReady
-                      ? "Re-run transcription and summary from the saved audio"
+                      ? "Re-run transcription from the saved audio"
                       : "Waiting for the transcription model to finish downloading")
-                Button {
-                    Task { await state.resummarize(recording) }
-                } label: {
-                    Label("Re-summarize", systemImage: "sparkles")
-                }
-                .disabled(!state.modelReady)
-                .help(state.modelReady
-                      ? "Re-run only the summary from the existing transcript"
-                      : "Waiting for the model to finish downloading")
             }
             .padding()
 
@@ -112,12 +103,7 @@ private struct MeetingDetailView: View {
                 .padding(.bottom, 8)
             }
 
-            TabView {
-                ScrollView { MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._") }
-                    .tabItem { Text("Transcript") }
-                ScrollView { MarkdownText(state.summary(for: recording) ?? "_No summary yet._") }
-                    .tabItem { Text("Summary") }
-            }
+            ScrollView { MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._") }
         }
     }
 }

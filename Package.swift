@@ -13,10 +13,8 @@ let package = Package(
         .library(name: "MeetingKit", targets: ["MeetingKit"]),
     ],
     dependencies: [
-        // On-device speech-to-text (runs the encoder on the Apple Neural Engine).
+        // On-device speech-to-text (runs the encoder on the GPU/Neural Engine).
         .package(url: "https://github.com/argmaxinc/WhisperKit", from: "1.0.0"),
-        // Local summarization LLM. mlx-swift-examples ships the MLXLLM product.
-        .package(url: "https://github.com/ml-explore/mlx-swift-examples", from: "2.29.1"),
     ],
     targets: [
         // Core library: domain models, pure logic, and Apple-framework integrations.
@@ -25,8 +23,6 @@ let package = Package(
             name: "MeetingKit",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
-                .product(name: "MLXLLM", package: "mlx-swift-examples"),
-                .product(name: "MLXLMCommon", package: "mlx-swift-examples"),
             ],
             path: "Sources/MeetingKit"
         ),

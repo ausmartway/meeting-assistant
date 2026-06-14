@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 14**) that
 watches the calendar, auto-captures Zoom/Meet/Teams meetings, and produces a
-speaker-labeled transcript + AI summary — processed locally on Apple Silicon.
+speaker-labeled transcript — transcribed locally on Apple Silicon. (Summarization
+was intentionally removed; this app only transcribes.)
 
 ## Commands
 
@@ -21,9 +22,9 @@ swift test --filter SpeakerFuser # run one suite by @Suite name
 
 ### Toolchain note (important)
 
-- Real ML deps (WhisperKit, MLX) require **full Xcode** for the Metal/CoreML
-  compiler. Confirm Xcode is active: `xcode-select -p` should point inside
-  `/Applications/Xcode.app`, not `/Library/Developer/CommandLineTools`.
+- WhisperKit requires **full Xcode** for the Metal/CoreML compiler. Confirm Xcode
+  is active: `xcode-select -p` should point inside `/Applications/Xcode.app`, not
+  `/Library/Developer/CommandLineTools`.
 - `Scripts/test.sh` exists as a fallback for running tests under **Command Line
   Tools only** (it injects the `Testing.framework` search path that SwiftPM
   doesn't add by default). Under full Xcode, prefer plain `swift test` — the
@@ -34,7 +35,7 @@ swift test --filter SpeakerFuser # run one suite by @Suite name
 ### Two SPM targets
 
 - **`MeetingKit`** (library, `Sources/MeetingKit/`) — all domain logic, the
-  Apple-framework integrations, and the ML backends. The test target imports it.
+  Apple-framework integrations, and the transcription backend. The test target imports it.
 - **`MeetingAssistant`** (executable, `Sources/MeetingAssistant/`) — the SwiftUI
   `@main` app: menu bar, windows, settings, and the `AppState` coordinator.
 
@@ -42,10 +43,10 @@ swift test --filter SpeakerFuser # run one suite by @Suite name
 
 `CaptureSession` is the **only** component that runs during a meeting, and it
 stays deliberately light: it writes mic + system audio to separate files and
-samples one video frame every few seconds. Everything expensive — transcription,
-speaker fusion, summarization — runs **after** the meeting via `MeetingProcessor`,
-reading from the files `CaptureSession` wrote. Preserve this split; don't move
-transcription/LLM work into the live path.
+samples one video frame every few seconds. Everything expensive — transcription
+and speaker fusion — runs **after** the meeting via `MeetingProcessor`, reading
+from the files `CaptureSession` wrote. Preserve this split; don't move
+transcription work into the live path.
 
 ### Pipeline
 
@@ -53,8 +54,8 @@ transcription/LLM work into the live path.
 CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → auto-start
   → CaptureSession  [LIVE: ScreenCaptureKit system audio + AVAudioEngine mic + SpeakerSampler frames]
   → MeetingRecording bundle on disk (MeetingStore)
-  → MeetingProcessor: Transcriber → HallucinationFilter → SpeakerFuser → TranscriptFormatter → Summarizer
-  → transcript.md + summary.md
+  → MeetingProcessor: Transcriber → HallucinationFilter → SpeakerFuser → TranscriptFormatter
+  → transcript.md
 ```
 
 ### Speaker labeling has two signals with very different reliability
@@ -74,29 +75,30 @@ Transcription is **multilingual with auto-detection** (English + Mandarin):
 true)`. Chinese-awareness also lives in `SpeakerSampler` (OCR
 `recognitionLanguages` include `zh-Hans`/`zh-Hant`; `bestName` filters CJK UI
 words) and `HallucinationFilter` (Mandarin stock phrases + CJK punctuation
-stripping). The **UI is English-only** — no string localization yet. Summaries
-follow whatever language the LLM produces (prompt is English; not forced to
-Chinese).
+stripping). The **UI is English-only** — no string localization yet.
 
-### ML backends are swappable behind protocols — go through `Backends`
+### Transcription backend is swappable behind a protocol — go through `Backends`
 
-`Transcribing` and `Summarizing` are protocols with real implementations
-(`WhisperKitTranscriber`, `MLXSummarizer`, `ClaudeSummarizer`) and stubs
-(`StubTranscriber`, `StubSummarizer`). The real WhisperKit/MLX implementations are
-wrapped in `#if canImport(...)` and live in **MeetingKit**.
+`Transcribing` is a protocol with a real implementation (`WhisperKitTranscriber`,
+an actor) and a stub (`StubTranscriber`). The real WhisperKit implementation is
+wrapped in `#if canImport(WhisperKit)` and lives in **MeetingKit**.
 
-**Gotcha:** the app target does *not* link WhisperKit/MLX directly, so
-`#if canImport(WhisperKit)` is always false there. Always select backends via
-`Backends.makeTranscriber(...)` / `Backends.makeLocalSummarizer()` (in
-`Sources/MeetingKit/Backends.swift`), which resolve inside MeetingKit. `Settings`
-already routes through `Backends`; do the same for any new backend wiring.
+**Gotcha:** the app target does *not* link WhisperKit directly, so
+`#if canImport(WhisperKit)` is always false there. Always select the backend via
+`Backends.makeTranscriber(...)` (in `Sources/MeetingKit/Backends.swift`), which
+resolves inside MeetingKit. `AppState`/`Settings` already route through `Backends`.
+
+WhisperKit specifics: GPU compute (`ModelComputeOptions(.cpuAndGPU)`) avoids the
+slow first-time ANE compile; models download to
+`Application Support/MeetingAssistant/WhisperModels/`; the transcriber is an actor
+that memoizes the load `Task` so concurrent channels share one download/load.
 
 ### Pure logic vs. integrations (what's tested)
 
 Pure, deterministic logic is unit-tested with **swift-testing** (`import Testing`,
 `@Suite`/`@Test`/`#expect`) — `MeetingURLParser`, `SpeakerFuser`,
-`HallucinationFilter`, `TranscriptFormatter`, `SummarizationPrompt`,
-`SpeakerSampler.bestName`. The framework integrations (EventKit, ScreenCaptureKit,
+`HallucinationFilter`, `TranscriptFormatter`, `WhisperTextCleaner`,
+`SpeakerSampler.bestName`, `Meeting.adHoc`. The framework integrations (EventKit, ScreenCaptureKit,
 AVAudioEngine, Vision) require real system access/permissions and are not unit
 tested — verify those by running the app. When adding logic, keep it pure and
 testable; follow TDD for it.

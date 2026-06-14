@@ -9,8 +9,8 @@ import ScreenCaptureKit
 ///  • Microphone (local user) via AVAudioEngine → `mic.wav`
 ///  • One video frame every few seconds → `SpeakerSampler` → speaker timeline
 ///
-/// Transcription, diarization, and summarization all happen afterwards from the
-/// files this writes, keeping the machine responsive while the user is on the call.
+/// Transcription and speaker labeling happen afterwards from the files this
+/// writes, keeping the machine responsive while the user is on the call.
 @available(macOS 14.0, *)
 public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 

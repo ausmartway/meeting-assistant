@@ -2,10 +2,10 @@
 
 A native macOS menu-bar app that watches your calendar, automatically captures
 meetings (Zoom, Google Meet, Microsoft Teams) when they start, and produces a
-speaker-labeled transcript plus an AI summary with action items — all processed
-locally on Apple Silicon.
+**speaker-labeled transcript** — transcribed locally on Apple Silicon.
 
-Target hardware: MacBook Pro M1 Pro / 32 GB, macOS 14 (Sonoma)+.
+Target hardware: MacBook Pro M1 Pro, macOS 14 (Sonoma)+. Runs comfortably on
+16 GB.
 
 ## Design principle: cheap live capture, heavy post-processing
 
@@ -16,9 +16,8 @@ recording. It only:
   separate files, and
 - samples one video frame every few seconds to note who's highlighted on screen.
 
-All the heavy work — transcription, speaker labeling, summarization — runs
-**after** the meeting ends, on the idle GPU. Your Mac stays free while you're in
-the meeting.
+The heavy work — transcription and speaker labeling — runs **after** the meeting
+ends, on the idle GPU. Your Mac stays free while you're in the meeting.
 
 ## How it works
 
@@ -28,9 +27,12 @@ EventKit ─▶ CalendarWatcher ─▶ (start time) ─▶ MeetingDetector
 CaptureSession  [LIVE: ScreenCaptureKit system audio + AVAudioEngine mic + frame sampling]
    ─▶ MeetingRecording bundle on disk
    ─▶ (you click Stop) ─▶ MeetingProcessor
-        Transcriber ─▶ SpeakerFuser ─▶ Summarizer ─▶ MeetingStore
-   ─▶ transcript.md + summary.md  ─▶ main window
+        Transcriber ─▶ HallucinationFilter ─▶ SpeakerFuser ─▶ MeetingStore
+   ─▶ transcript.md  ─▶ main window
 ```
+
+You can also record an **ad-hoc meeting** that isn't on your calendar from the
+menu bar.
 
 **Speaker labeling** combines two signals: the mic-vs-system split gives an exact
 "you vs. others" attribution that never fails, and the on-screen active-speaker
@@ -45,74 +47,54 @@ degrading to "Speaker" when a name can't be read.
 | `Sources/MeetingAssistant/` | SwiftUI menu-bar app, settings, orchestration |
 | `Tests/MeetingKitTests/` | Unit tests (swift-testing) for the pure logic |
 | `Resources/` | `Info.plist`, entitlements |
-| `Scripts/` | `test.sh`, `build-app.sh` |
+| `Scripts/` | `test.sh`, `build-app.sh`, `install.sh`, `make-dmg.sh` |
 
 Key components (all in `Sources/MeetingKit`):
 `MeetingURLParser`, `CalendarWatcher`, `MeetingDetector`, `CaptureSession`,
 `SpeakerSampler`, `Transcriber`, `SpeakerFuser`, `HallucinationFilter`,
-`TranscriptFormatter`, `Summarizer` / `ClaudeSummarizer`, `MeetingProcessor`,
-`MeetingStore`.
+`WhisperTextCleaner`, `TranscriptFormatter`, `MeetingProcessor`, `MeetingStore`.
 
 ## Build & run
 
 ```sh
-# Run the tests (works under Command Line Tools — no full Xcode needed)
-./Scripts/test.sh
-
-# Build a runnable, ad-hoc-signed .app and launch it
-./Scripts/build-app.sh --run
+swift test               # run the unit tests (needs full Xcode toolchain active)
+./Scripts/install.sh --run   # build, install to /Applications (single copy), launch
+./Scripts/make-dmg.sh        # package a drag-to-install DMG
 ```
 
-`build-app.sh` produces `build/Meeting Assistant.app`. On first launch, open
-**Settings → Permissions** and grant Screen & System Audio Recording,
-Microphone, Calendar, Accessibility, and Notifications. For unsigned/dev builds
-you may need to add the app manually under **System Settings → Privacy &
-Security**.
+On first launch, open **Settings → Permissions** and grant Screen & System Audio
+Recording, Microphone, Calendar, Accessibility, and Notifications. The build is
+ad-hoc signed, so first launch needs a right-click → **Open** to clear Gatekeeper.
 
-## On-device ML
+## On-device transcription
 
-Real on-device ML is wired in and builds (requires **full Xcode** for the
-Metal/CoreML toolchain — Command Line Tools alone can't compile these deps):
+- **WhisperKit** (`from: 1.0.0`) → on-device speech-to-text. `WhisperKitTranscriber`
+  in `Transcriber.swift`. Uses **multilingual** models with **language
+  auto-detection**, so English and Mandarin meetings (and reasonable
+  code-switching) transcribe without manual configuration. On-screen name OCR and
+  the silence-hallucination filter are Chinese-aware too.
+- Models run the encoder/decoder on the **GPU** (`ModelComputeOptions`), avoiding
+  the very slow first-time Apple Neural Engine compile.
+- The model downloads at launch (with a progress bar) into an app-owned folder,
+  `Application Support/MeetingAssistant/WhisperModels/` — not
+  `~/Documents/huggingface`. Processing is gated until the model is ready.
+- `Backends.swift` selects the real engine via `#if canImport(WhisperKit)` (inside
+  MeetingKit, where the module is linked) and falls back to a stub otherwise.
 
-- **WhisperKit** (`from: 1.0.0`) → on-device transcription, encoder on the Apple
-  Neural Engine. `WhisperKitTranscriber` in `Transcriber.swift`. Uses
-  **multilingual** models with **language auto-detection**, so English and
-  Mandarin meetings (and reasonable code-switching) transcribe without manual
-  configuration. On-screen name OCR and the silence-hallucination filter are
-  Chinese-aware too.
-- **mlx-swift-examples / MLXLLM** (`from: 2.29.1`) → local summarization LLM
-  (`Qwen2.5-3B-Instruct-4bit` by default). `MLXSummarizer` in `Summarizer.swift`.
-  Both the Whisper and MLX models download at launch (with a progress bar) into
-  app-owned folders under `Application Support/MeetingAssistant/`
-  (`WhisperModels/`, `MLXModels/`) — not `~/Documents/huggingface`.
-
-`Backends.swift` selects the real engine via `#if canImport` (inside MeetingKit,
-where the modules are linked) and falls back to the stubs if a backend is ever
-removed. Models download on first use, then run fully offline.
-
-The **Claude API** summarizer (`ClaudeSummarizer`) is the opt-in alternative —
-set an API key in Settings and pick the Claude engine. Audio always stays
-on-device; only transcript text is sent when you opt into Claude.
+Requires **full Xcode** to build (Metal/CoreML toolchain). Command Line Tools
+alone can compile the pure-logic library + tests but not the WhisperKit deps.
 
 ### Long meetings on limited RAM
 
-Meetings of any length (2 h+) work within a flat memory budget, so a 16 GB
-machine is fine:
-
-- **Transcription** uses WhisperKit VAD chunking with a bounded worker count, so
-  long audio is processed in voice-activity segments rather than all at once.
-- **Summarization** is **map-reduce** (`SummaryRunner` + `TranscriptChunker`):
-  the transcript is split into bounded chunks, each summarized independently
-  (fresh LLM context, capped output), then the chunk-summaries are reduced — and
-  reduced again hierarchically if needed. Each model call sees a bounded amount
-  of text, so peak memory doesn't grow with meeting length. The local
-  `MLXSummarizer` is an actor that loads the model once and reuses it across all
-  chunk calls.
+Meetings of any length (2 h+) transcribe within a flat memory budget, so a 16 GB
+machine is fine: WhisperKit **VAD chunking** with a bounded worker count
+processes long audio in voice-activity segments rather than holding it all at
+once, and the two channels share one model load (the transcriber is an actor that
+downloads/loads the model exactly once).
 
 ## Status
 
-Core library, integrations, app shell, and **real on-device transcription +
-summarization** are all implemented and building; the unit-test suite is green.
-Active-speaker screen reading is best-effort and will need per-platform tuning
-(it's the deliberately fragile part — the mic/system split is the reliable
-speaker signal).
+Core library, integrations, and app shell are implemented and building; the
+unit-test suite is green. Active-speaker screen reading is best-effort and will
+need per-platform tuning (it's the deliberately fragile part — the mic/system
+split is the reliable speaker signal).
