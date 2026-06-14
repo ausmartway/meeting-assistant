@@ -56,10 +56,17 @@ private struct MeetingDetailView: View {
                 }
                 Spacer()
                 Button {
+                    Task { await state.reprocess(recording) }
+                } label: {
+                    Label("Re-process", systemImage: "arrow.clockwise")
+                }
+                .help("Re-run transcription and summary from the saved audio")
+                Button {
                     Task { await state.resummarize(recording) }
                 } label: {
                     Label("Re-summarize", systemImage: "sparkles")
                 }
+                .help("Re-run only the summary from the existing transcript")
             }
             .padding()
 

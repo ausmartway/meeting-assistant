@@ -8,7 +8,9 @@ import Foundation
 public enum TranscriptionModel: String, Codable, Sendable, CaseIterable {
     case small = "small"
     case medium = "medium"
-    case largeTurbo = "large-v3-turbo"
+    // WhisperKit/HuggingFace folder is "openai_whisper-large-v3_turbo" — the
+    // turbo suffix uses an underscore, not a hyphen (a hyphen → modelsUnavailable).
+    case largeTurbo = "large-v3_turbo"
 
     public var displayName: String {
         switch self {

@@ -148,6 +148,17 @@ final class AppState: ObservableObject {
         recordings = store.allRecordings()
     }
 
+    /// Re-run the full pipeline (transcribe → fuse → summarize) for a saved
+    /// recording. Recovers a meeting whose processing failed (e.g. a missing
+    /// model) — the audio + speaker timeline are already on disk.
+    func reprocess(_ recording: MeetingRecording) async {
+        guard case .idle = status else { return }
+        lastError = nil
+        status = .processing(recording.meeting)
+        await process(recording.meeting)
+        recordings = store.allRecordings()
+    }
+
     /// Re-run the summary for a saved meeting (e.g. via Claude) on demand.
     func resummarize(_ recording: MeetingRecording) async {
         let processor = MeetingProcessor(
