@@ -7,9 +7,10 @@ import Foundation
 public enum Backends {
 
     /// The on-device transcriber: real WhisperKit when available, else the stub.
-    public static func makeTranscriber(model: TranscriptionModel) -> Transcribing {
+    /// `workers` is the VAD decode parallelism (see `WhisperKitTranscriber`).
+    public static func makeTranscriber(model: TranscriptionModel, workers: Int = 4) -> Transcribing {
         #if canImport(WhisperKit)
-        return WhisperKitTranscriber(model: model)
+        return WhisperKitTranscriber(model: model, concurrentWorkers: workers)
         #else
         return StubTranscriber()
         #endif

@@ -65,7 +65,10 @@ final class AppState: ObservableObject {
         // A failure here is unrecoverable (no place to store data); surface loudly.
         self.store = try! MeetingStore()
         self.recordings = store.allRecordings()
-        self.transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
+        self.transcriber = Backends.makeTranscriber(
+            model: settings.transcriptionModel,
+            workers: settings.transcriptionWorkers
+        )
     }
 
     // MARK: - Lifecycle
@@ -86,7 +89,10 @@ final class AppState: ObservableObject {
         modelPreparing = true
         modelReady = false
         modelStatusText = "Preparing model…"
-        transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
+        transcriber = Backends.makeTranscriber(
+            model: settings.transcriptionModel,
+            workers: settings.transcriptionWorkers
+        )
         let tHandler: TranscribeProgressHandler = { [weak self] p in
             Task { @MainActor in
                 self?.modelDownloadFraction = p.fraction
@@ -117,6 +123,11 @@ final class AppState: ObservableObject {
     func refreshUpcoming() {
         guard permissions.calendar == .granted else { return }
         upcoming = calendar.upcomingMeetings()
+    }
+
+    /// Apply the VAD worker-count setting to the live transcriber (no model reload).
+    func applyWorkerSetting() async {
+        await transcriber.setConcurrentWorkers(settings.transcriptionWorkers)
     }
 
     // MARK: - Capture control

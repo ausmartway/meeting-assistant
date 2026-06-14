@@ -68,6 +68,22 @@ struct SettingsView: View {
                 }
             }
 
+            Stepper(
+                "Transcription workers: \(state.settings.transcriptionWorkers)",
+                value: Binding(
+                    get: { state.settings.transcriptionWorkers },
+                    set: { state.settings.transcriptionWorkers = $0 }
+                ),
+                in: AppSettings.workerRange
+            )
+            .onChange(of: state.settings.transcriptionWorkers) {
+                Task { await state.applyWorkerSetting() }
+            }
+            Text("How many audio chunks are transcribed in parallel. 4 is a good "
+                 + "default for an M1 Pro; higher uses more GPU/RAM with diminishing "
+                 + "returns, lower is gentler during other work.")
+                .font(.caption).foregroundStyle(.secondary)
+
             Text("Transcription runs 100% on-device. Audio never leaves your Mac.")
                 .font(.caption).foregroundStyle(.secondary)
         }

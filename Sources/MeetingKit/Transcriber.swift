@@ -54,6 +54,10 @@ public protocol Transcribing: Sendable {
     /// transcription doesn't pay for it. Idempotent and safe to call repeatedly.
     func prepare(progress: TranscribeProgressHandler?) async throws
 
+    /// Update VAD decode parallelism live, without reloading the model. Default
+    /// no-op (the stub has nothing to tune).
+    func setConcurrentWorkers(_ count: Int) async
+
     /// Transcribe one audio file. `channel` is carried onto every segment so the
     /// speaker fuser can tell mic ("Me") from system (remote) audio. `progress`
     /// receives model-download / stage updates for the UI.
@@ -69,6 +73,8 @@ public extension Transcribing {
     func transcribe(audioFile: URL, channel: AudioChannel) async throws -> [TranscriptSegment] {
         try await transcribe(audioFile: audioFile, channel: channel, progress: nil)
     }
+
+    func setConcurrentWorkers(_ count: Int) async {}
 }
 
 /// A no-ML placeholder so the end-to-end pipeline produces visible output before
@@ -100,14 +106,22 @@ import CoreML
 /// serially through the actor, which is also the safe way to reuse one pipeline.
 public actor WhisperKitTranscriber: Transcribing {
     private let model: TranscriptionModel
+    /// VAD decode parallelism (`DecodingOptions.concurrentWorkerCount`). Mutable
+    /// so the setting can change without reloading the model.
+    private var concurrentWorkers: Int
     // Memoize the *task*, not the result. Storing the in-flight task and awaiting
     // it from every caller guarantees the model is downloaded/loaded exactly once
     // even under actor reentrancy (two channels both hitting an `await` before the
     // pipeline exists would otherwise each start their own download).
     private var loadTask: Task<WhisperKit, Error>?
 
-    public init(model: TranscriptionModel = .largeTurbo) {
+    public init(model: TranscriptionModel = .largeTurbo, concurrentWorkers: Int = 4) {
         self.model = model
+        self.concurrentWorkers = max(1, concurrentWorkers)
+    }
+
+    public func setConcurrentWorkers(_ count: Int) {
+        concurrentWorkers = max(1, count)
     }
 
     /// App-owned location for downloaded Whisper models, instead of the
@@ -152,7 +166,7 @@ public actor WhisperKitTranscriber: Transcribing {
         let options = DecodingOptions(
             language: nil,
             detectLanguage: true,
-            concurrentWorkerCount: 2,
+            concurrentWorkerCount: concurrentWorkers,
             chunkingStrategy: .vad
         )
         let results = try await pipe.transcribe(
