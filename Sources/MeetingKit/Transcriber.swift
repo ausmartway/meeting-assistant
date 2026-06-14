@@ -185,7 +185,16 @@ public actor WhisperKitTranscriber: Transcribing {
         }
 
         progress?(TranscribeProgress(fraction: nil, phase: "Loading model…"))
-        let loaded = try await WhisperKit(WhisperKitConfig(modelFolder: folder.path, download: false))
+        // Use the already-downloaded model files (modelFolder), but keep
+        // download:true so WhisperKit can fetch the small tokenizer — which lives
+        // in a different repo and is NOT part of the model download above. With
+        // download:false the tokenizer load hangs. tokenizerFolder defaults to
+        // downloadBase, so it lands in our app-owned folder too.
+        let loaded = try await WhisperKit(WhisperKitConfig(
+            downloadBase: Self.modelDownloadBase,
+            modelFolder: folder.path,
+            download: true
+        ))
         return loaded
     }
 
