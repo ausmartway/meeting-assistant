@@ -45,10 +45,16 @@ public final class MeetingProcessor {
         let transcript = TranscriptFormatter.document(meeting: recording.meeting, segments: labeled)
         try store.saveTranscript(transcript, for: recording.meeting.id)
 
-        // 4. Summarize and persist.
+        // 4. Summarize and persist. Map-reduce keeps memory flat for long
+        //    meetings (each model call sees a bounded chunk).
         progress?(nil, "Summarizing…")
         let body = TranscriptFormatter.transcriptBody(labeled)
-        let summary = try await summarizer.summarize(transcript: body, meetingTitle: recording.meeting.title)
+        let summary = try await SummaryRunner.run(
+            transcript: body,
+            title: recording.meeting.title,
+            summarizer: summarizer,
+            progress: { done, total in progress?(nil, "Summarizing… (\(done)/\(total))") }
+        )
         try store.saveSummary(summary.markdown(), for: recording.meeting.id)
 
         return (transcript, summary)

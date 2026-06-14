@@ -55,19 +55,33 @@ public struct StubSummarizer: Summarizing {
 import MLXLLM
 import MLXLMCommon
 
-public struct MLXSummarizer: Summarizing {
+/// Local summarizer. An actor so the model weights are loaded once and reused
+/// across the many calls map-reduce makes for a long meeting. Each call uses a
+/// FRESH `ChatSession` (independent KV cache) with a capped output length, so
+/// per-call memory stays bounded — long meetings summarize within the same
+/// memory envelope as short ones (works on 16 GB).
+public actor MLXSummarizer: Summarizing {
     private let modelID: String
+    private var modelContext: ModelContext?
 
     /// A small instruct model is plenty for summaries and stays light on RAM
-    /// (~2–3 GB at 4-bit), per the design notes.
+    /// (~1.7 GB at 4-bit).
     public init(modelID: String = "mlx-community/Qwen2.5-3B-Instruct-4bit") {
         self.modelID = modelID
     }
 
+    private func context() async throws -> ModelContext {
+        if let modelContext { return modelContext }
+        let ctx = try await loadModel(id: modelID)
+        modelContext = ctx
+        return ctx
+    }
+
     public func summarize(transcript: String, meetingTitle: String) async throws -> MeetingSummary {
-        // Downloads + compiles the model on first use, then runs fully on-device.
-        let model = try await loadModel(id: modelID)
-        let session = ChatSession(model)
+        let ctx = try await context()
+        // Fresh session per call → no KV cache growth across chunks. Cap output
+        // so a single summary can't run away in tokens/memory.
+        let session = ChatSession(ctx, generateParameters: GenerateParameters(maxTokens: 800))
         let raw = try await session.respond(
             to: SummarizationPrompt.build(transcript: transcript, title: meetingTitle)
         )

@@ -137,9 +137,16 @@ public actor WhisperKitTranscriber: Transcribing {
     ) async throws -> [TranscriptSegment] {
         let pipe = try await pipeline(progress: progress)
         progress?(TranscribeProgress(fraction: nil, phase: "Transcribing…"))
-        // language: nil + detectLanguage: true → auto-detect per meeting
-        // (handles English, Mandarin, and reasonable code-switching).
-        let options = DecodingOptions(language: nil, detectLanguage: true)
+        // language: nil + detectLanguage: true → auto-detect per meeting.
+        // VAD chunking processes long audio in voice-activity segments with a
+        // bounded worker count, so a multi-hour meeting transcribes with flat
+        // memory instead of holding everything at once (works on 16 GB).
+        let options = DecodingOptions(
+            language: nil,
+            detectLanguage: true,
+            concurrentWorkerCount: 2,
+            chunkingStrategy: .vad
+        )
         let results = try await pipe.transcribe(audioPath: audioFile.path, decodeOptions: options)
         let raw = results.flatMap { result in
             result.segments.map {

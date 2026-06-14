@@ -91,6 +91,21 @@ The **Claude API** summarizer (`ClaudeSummarizer`) is the opt-in alternative —
 set an API key in Settings and pick the Claude engine. Audio always stays
 on-device; only transcript text is sent when you opt into Claude.
 
+### Long meetings on limited RAM
+
+Meetings of any length (2 h+) work within a flat memory budget, so a 16 GB
+machine is fine:
+
+- **Transcription** uses WhisperKit VAD chunking with a bounded worker count, so
+  long audio is processed in voice-activity segments rather than all at once.
+- **Summarization** is **map-reduce** (`SummaryRunner` + `TranscriptChunker`):
+  the transcript is split into bounded chunks, each summarized independently
+  (fresh LLM context, capped output), then the chunk-summaries are reduced — and
+  reduced again hierarchically if needed. Each model call sees a bounded amount
+  of text, so peak memory doesn't grow with meeting length. The local
+  `MLXSummarizer` is an actor that loads the model once and reuses it across all
+  chunk calls.
+
 ## Status
 
 Core library, integrations, app shell, and **real on-device transcription +
