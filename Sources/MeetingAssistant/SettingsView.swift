@@ -55,6 +55,20 @@ struct SettingsView: View {
             )) {
                 ForEach(TranscriptionModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
+            .onChange(of: state.settings.transcriptionModel) {
+                // Changing the model triggers a fresh download/load.
+                Task { await state.prepareModel() }
+            }
+
+            LabeledContent("Model status") {
+                if state.modelPreparing {
+                    Text(state.modelStatusText ?? "Preparing…")
+                } else if state.modelReady {
+                    Label("Ready", systemImage: "checkmark.seal").foregroundStyle(.green)
+                } else {
+                    Button("Download / retry") { Task { await state.prepareModel() } }
+                }
+            }
 
             Picker("Summary engine", selection: Binding(
                 get: { state.settings.summaryEngine },

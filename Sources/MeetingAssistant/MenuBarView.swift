@@ -18,6 +18,26 @@ struct MenuBarView: View {
             Label(state.status.label, systemImage: statusSymbol)
                 .font(.subheadline)
 
+            // Model readiness (downloaded at launch; processing waits for it).
+            if state.modelPreparing {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let f = state.modelDownloadFraction {
+                        ProgressView(value: f) {
+                            Text(state.modelStatusText ?? "Preparing model…").font(.caption)
+                        }
+                        Text("\(Int(f * 100))%").font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(state.modelStatusText ?? "Preparing model…").font(.caption)
+                        }
+                    }
+                }
+            } else if state.modelReady {
+                Label("Model ready", systemImage: "checkmark.seal")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             if let next = state.upcoming.first {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Next meeting").font(.caption).foregroundStyle(.secondary)

@@ -50,6 +50,10 @@ public typealias TranscribeProgressHandler = @Sendable (TranscribeProgress) -> V
 /// engine (WhisperKit, on the Apple Neural Engine) requires the full Xcode
 /// toolchain to build; `StubTranscriber` keeps the pipeline runnable without it.
 public protocol Transcribing: Sendable {
+    /// Download + load the model ahead of time (e.g. at app launch) so the first
+    /// transcription doesn't pay for it. Idempotent and safe to call repeatedly.
+    func prepare(progress: TranscribeProgressHandler?) async throws
+
     /// Transcribe one audio file. `channel` is carried onto every segment so the
     /// speaker fuser can tell mic ("Me") from system (remote) audio. `progress`
     /// receives model-download / stage updates for the UI.
@@ -72,6 +76,8 @@ public extension Transcribing {
 public struct StubTranscriber: Transcribing {
     public init() {}
 
+    public func prepare(progress: TranscribeProgressHandler?) async throws {}
+
     public func transcribe(
         audioFile: URL,
         channel: AudioChannel,
@@ -93,7 +99,11 @@ import WhisperKit
 /// serially through the actor, which is also the safe way to reuse one pipeline.
 public actor WhisperKitTranscriber: Transcribing {
     private let model: TranscriptionModel
-    private var pipe: WhisperKit?
+    // Memoize the *task*, not the result. Storing the in-flight task and awaiting
+    // it from every caller guarantees the model is downloaded/loaded exactly once
+    // even under actor reentrancy (two channels both hitting an `await` before the
+    // pipeline exists would otherwise each start their own download).
+    private var loadTask: Task<WhisperKit, Error>?
 
     public init(model: TranscriptionModel = .largeTurbo) {
         self.model = model
@@ -113,6 +123,10 @@ public actor WhisperKitTranscriber: Transcribing {
     private static var repoCacheDir: URL {
         modelDownloadBase
             .appendingPathComponent("models/argmaxinc/whisperkit-coreml", isDirectory: true)
+    }
+
+    public func prepare(progress: TranscribeProgressHandler?) async throws {
+        _ = try await pipeline(progress: progress)
     }
 
     public func transcribe(
@@ -140,9 +154,20 @@ public actor WhisperKitTranscriber: Transcribing {
     }
 
     /// Download (once, with progress + one clean retry) and load the model.
+    /// Reentrancy-safe via task memoization.
     private func pipeline(progress: TranscribeProgressHandler?) async throws -> WhisperKit {
-        if let pipe { return pipe }
+        if let loadTask { return try await loadTask.value }
+        let task = Task { try await self.buildPipeline(progress: progress) }
+        loadTask = task
+        do {
+            return try await task.value
+        } catch {
+            loadTask = nil   // allow a later attempt (e.g. Re-process) to retry
+            throw error
+        }
+    }
 
+    private func buildPipeline(progress: TranscribeProgressHandler?) async throws -> WhisperKit {
         let downloadLabel = "Downloading model (\(model.approxDownloadDescription))…"
         let report: ProgressCallback = { p in
             progress?(TranscribeProgress(fraction: p.fractionCompleted, phase: downloadLabel))
@@ -161,7 +186,6 @@ public actor WhisperKitTranscriber: Transcribing {
 
         progress?(TranscribeProgress(fraction: nil, phase: "Loading model…"))
         let loaded = try await WhisperKit(WhisperKitConfig(modelFolder: folder.path, download: false))
-        pipe = loaded
         return loaded
     }
 

@@ -34,6 +34,13 @@ final class AppState: ObservableObject {
     @Published private(set) var progressFraction: Double?
     @Published private(set) var progressPhase: String?
 
+    /// Model readiness — the transcription model is downloaded + loaded at launch,
+    /// and processing is gated on it being ready.
+    @Published private(set) var modelReady = false
+    @Published private(set) var modelPreparing = false
+    @Published private(set) var modelDownloadFraction: Double?
+    @Published private(set) var modelStatusText: String?
+
     let settings: AppSettings
     let permissions: Permissions
     private let calendar: CalendarWatcher
@@ -44,15 +51,21 @@ final class AppState: ObservableObject {
     private var pollTimer: Timer?
     private var notifiedMeetingIDs: Set<String> = []
 
+    /// Shared, prepared transcriber reused across all processing so the model is
+    /// downloaded/loaded exactly once (at launch) rather than per meeting.
+    private var transcriber: Transcribing
+
     init() {
         let calendar = CalendarWatcher()
         self.calendar = calendar
         self.detector = MeetingDetector()
-        self.settings = AppSettings()
+        let settings = AppSettings()
+        self.settings = settings
         self.permissions = Permissions(calendarWatcher: calendar)
         // A failure here is unrecoverable (no place to store data); surface loudly.
         self.store = try! MeetingStore()
         self.recordings = store.allRecordings()
+        self.transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
     }
 
     // MARK: - Lifecycle
@@ -61,9 +74,35 @@ final class AppState: ObservableObject {
     /// 30 seconds. Cheap — it only lists events and checks running apps.
     func start() {
         refreshUpcoming()
+        Task { await prepareModel() }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+    }
+
+    /// Download + load the transcription model up front (at launch, or after the
+    /// user changes the model in Settings). Processing waits for this to finish.
+    func prepareModel() async {
+        modelPreparing = true
+        modelReady = false
+        modelStatusText = "Preparing model…"
+        transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
+        let handler: TranscribeProgressHandler = { [weak self] p in
+            Task { @MainActor in
+                self?.modelDownloadFraction = p.fraction
+                self?.modelStatusText = p.phase
+            }
+        }
+        do {
+            try await transcriber.prepare(progress: handler)
+            modelReady = true
+            modelStatusText = "Model ready"
+        } catch {
+            modelStatusText = "Model download failed — retry in Settings"
+            lastError = "Model preparation failed: \(error.localizedDescription)"
+        }
+        modelPreparing = false
+        modelDownloadFraction = nil
     }
 
     private func tick() {
@@ -140,7 +179,7 @@ final class AppState: ObservableObject {
         }
         let processor = MeetingProcessor(
             store: store,
-            transcriber: settings.makeTranscriber(),
+            transcriber: transcriber,
             summarizer: settings.makeSummarizer()
         )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
@@ -176,7 +215,7 @@ final class AppState: ObservableObject {
     func resummarize(_ recording: MeetingRecording) async {
         let processor = MeetingProcessor(
             store: store,
-            transcriber: settings.makeTranscriber(),
+            transcriber: transcriber,
             summarizer: settings.makeSummarizer()
         )
         // Reuse the existing transcript instead of re-transcribing the audio.

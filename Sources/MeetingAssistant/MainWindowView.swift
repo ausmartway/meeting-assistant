@@ -31,6 +31,23 @@ struct MainWindowView: View {
                 )
             }
         }
+        .overlay(alignment: .top) {
+            if state.modelPreparing {
+                HStack(spacing: 10) {
+                    if let f = state.modelDownloadFraction {
+                        ProgressView(value: f).frame(width: 140)
+                        Text("\(state.modelStatusText ?? "Preparing model…") \(Int(f * 100))%")
+                    } else {
+                        ProgressView().controlSize(.small)
+                        Text(state.modelStatusText ?? "Preparing model…")
+                    }
+                }
+                .font(.caption)
+                .padding(8)
+                .background(.thinMaterial, in: Capsule())
+                .padding(.top, 8)
+            }
+        }
         .overlay(alignment: .bottom) {
             if let error = state.lastError {
                 Text(error)
@@ -60,7 +77,10 @@ private struct MeetingDetailView: View {
                 } label: {
                     Label("Re-process", systemImage: "arrow.clockwise")
                 }
-                .help("Re-run transcription and summary from the saved audio")
+                .disabled(!state.modelReady)
+                .help(state.modelReady
+                      ? "Re-run transcription and summary from the saved audio"
+                      : "Waiting for the transcription model to finish downloading")
                 Button {
                     Task { await state.resummarize(recording) }
                 } label: {
