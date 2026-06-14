@@ -92,6 +92,7 @@ public struct StubTranscriber: Transcribing {
 
 #if canImport(WhisperKit)
 import WhisperKit
+import CoreML
 
 /// An actor so the model is downloaded and loaded exactly once even when the two
 /// audio channels are transcribed concurrently — concurrent downloads of the same
@@ -185,6 +186,15 @@ public actor WhisperKitTranscriber: Transcribing {
         }
 
         progress?(TranscribeProgress(fraction: nil, phase: "Loading model…"))
+        // Run the encoder + decoder on the GPU instead of the Apple Neural Engine.
+        // WhisperKit defaults to .cpuAndNeuralEngine, whose FIRST-time ANE compile
+        // of a large model takes many minutes (ANECompilerService pinned at ~100%,
+        // app blocked — looks hung). GPU avoids that compile and loads quickly; for
+        // batch post-meeting processing the throughput difference is negligible.
+        let compute = ModelComputeOptions(
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU
+        )
         // Use the already-downloaded model files (modelFolder), but keep
         // download:true so WhisperKit can fetch the small tokenizer — which lives
         // in a different repo and is NOT part of the model download above. With
@@ -193,6 +203,7 @@ public actor WhisperKitTranscriber: Transcribing {
         let loaded = try await WhisperKit(WhisperKitConfig(
             downloadBase: Self.modelDownloadBase,
             modelFolder: folder.path,
+            computeOptions: compute,
             download: true
         ))
         return loaded
