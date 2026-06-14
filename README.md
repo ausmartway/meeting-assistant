@@ -82,6 +82,9 @@ Metal/CoreML toolchain — Command Line Tools alone can't compile these deps):
   Chinese-aware too.
 - **mlx-swift-examples / MLXLLM** (`from: 2.29.1`) → local summarization LLM
   (`Qwen2.5-3B-Instruct-4bit` by default). `MLXSummarizer` in `Summarizer.swift`.
+  Both the Whisper and MLX models download at launch (with a progress bar) into
+  app-owned folders under `Application Support/MeetingAssistant/`
+  (`WhisperModels/`, `MLXModels/`) — not `~/Documents/huggingface`.
 
 `Backends.swift` selects the real engine via `#if canImport` (inside MeetingKit,
 where the modules are linked) and falls back to the stubs if a backend is ever

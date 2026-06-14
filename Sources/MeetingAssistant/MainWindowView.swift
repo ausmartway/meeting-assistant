@@ -86,7 +86,10 @@ private struct MeetingDetailView: View {
                 } label: {
                     Label("Re-summarize", systemImage: "sparkles")
                 }
-                .help("Re-run only the summary from the existing transcript")
+                .disabled(!state.modelReady)
+                .help(state.modelReady
+                      ? "Re-run only the summary from the existing transcript"
+                      : "Waiting for the model to finish downloading")
             }
             .padding()
 

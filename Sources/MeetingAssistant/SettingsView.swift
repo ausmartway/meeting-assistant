@@ -76,6 +76,10 @@ struct SettingsView: View {
             )) {
                 ForEach(SummaryEngine.allCases) { Text($0.displayName).tag($0) }
             }
+            .onChange(of: state.settings.summaryEngine) {
+                // Switching to local triggers the summary-model download; Claude needs none.
+                Task { await state.prepareModel() }
+            }
 
             if state.settings.summaryEngine == .claude {
                 TextField("Claude model", text: Binding(

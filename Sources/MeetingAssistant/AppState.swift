@@ -54,6 +54,7 @@ final class AppState: ObservableObject {
     /// Shared, prepared transcriber reused across all processing so the model is
     /// downloaded/loaded exactly once (at launch) rather than per meeting.
     private var transcriber: Transcribing
+    private var summarizer: Summarizing
 
     init() {
         let calendar = CalendarWatcher()
@@ -66,6 +67,7 @@ final class AppState: ObservableObject {
         self.store = try! MeetingStore()
         self.recordings = store.allRecordings()
         self.transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
+        self.summarizer = settings.makeSummarizer()
     }
 
     // MARK: - Lifecycle
@@ -87,14 +89,24 @@ final class AppState: ObservableObject {
         modelReady = false
         modelStatusText = "Preparing model…"
         transcriber = Backends.makeTranscriber(model: settings.transcriptionModel)
-        let handler: TranscribeProgressHandler = { [weak self] p in
+        summarizer = settings.makeSummarizer()
+        let tHandler: TranscribeProgressHandler = { [weak self] p in
+            Task { @MainActor in
+                self?.modelDownloadFraction = p.fraction
+                self?.modelStatusText = p.phase
+            }
+        }
+        let sHandler: SummarizeProgressHandler = { [weak self] p in
             Task { @MainActor in
                 self?.modelDownloadFraction = p.fraction
                 self?.modelStatusText = p.phase
             }
         }
         do {
-            try await transcriber.prepare(progress: handler)
+            // Transcription model first, then the (local) summary model. Claude /
+            // stub summarizers prepare() as a no-op, so no extra download there.
+            try await transcriber.prepare(progress: tHandler)
+            try await summarizer.prepare(progress: sHandler)
             modelReady = true
             modelStatusText = "Model ready"
         } catch {
@@ -180,7 +192,7 @@ final class AppState: ObservableObject {
         let processor = MeetingProcessor(
             store: store,
             transcriber: transcriber,
-            summarizer: settings.makeSummarizer()
+            summarizer: summarizer
         )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
@@ -213,22 +225,28 @@ final class AppState: ObservableObject {
 
     /// Re-run the summary for a saved meeting (e.g. via Claude) on demand.
     func resummarize(_ recording: MeetingRecording) async {
-        let processor = MeetingProcessor(
-            store: store,
-            transcriber: transcriber,
-            summarizer: settings.makeSummarizer()
-        )
+        guard case .idle = status else { return }
         // Reuse the existing transcript instead of re-transcribing the audio.
         guard let transcriptBody = store.transcript(for: recording.meeting.id) else { return }
+        status = .processing(recording.meeting)
+        progressPhase = "Summarizing…"
         do {
-            let summary = try await settings.makeSummarizer()
-                .summarize(transcript: transcriptBody, meetingTitle: recording.meeting.title)
+            // Map-reduce so re-summarizing a long meeting stays memory-bounded too.
+            let summary = try await SummaryRunner.run(
+                transcript: transcriptBody,
+                title: recording.meeting.title,
+                summarizer: summarizer,
+                progress: { [weak self] done, total in
+                    Task { @MainActor in self?.progressPhase = "Summarizing… (\(done)/\(total))" }
+                }
+            )
             try store.saveSummary(summary.markdown(), for: recording.meeting.id)
             recordings = store.allRecordings()
         } catch {
             lastError = "Re-summarize failed: \(error.localizedDescription)"
         }
-        _ = processor // silence unused in case future flows need it
+        progressPhase = nil
+        status = .idle
     }
 
     func transcript(for recording: MeetingRecording) -> String? {

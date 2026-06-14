@@ -22,6 +22,19 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
     }
 }
 
+/// Coarse progress for summary-model preparation (download/load). `fraction` is
+/// 0...1 while downloading, nil while loading; `phase` is a UI label.
+public struct SummarizeProgress: Sendable {
+    public let fraction: Double?
+    public let phase: String
+    public init(fraction: Double?, phase: String) {
+        self.fraction = fraction
+        self.phase = phase
+    }
+}
+
+public typealias SummarizeProgressHandler = @Sendable (SummarizeProgress) -> Void
+
 /// Produces a summary + action items from a finished transcript.
 ///
 /// Two real backends are intended: a local LLM (MLX, default, fully private) and
@@ -29,7 +42,15 @@ public struct MeetingSummary: Codable, Sendable, Equatable {
 /// Metal toolchain to build, so it is a swap-in; `ClaudeSummarizer` works today
 /// over plain HTTP, and `StubSummarizer` keeps the pipeline runnable offline.
 public protocol Summarizing: Sendable {
+    /// Download + load the model ahead of time (e.g. at app launch). Idempotent.
+    /// Default is a no-op (Claude/stub need no local model).
+    func prepare(progress: SummarizeProgressHandler?) async throws
+
     func summarize(transcript: String, meetingTitle: String) async throws -> MeetingSummary
+}
+
+public extension Summarizing {
+    func prepare(progress: SummarizeProgressHandler?) async throws {}
 }
 
 /// Offline placeholder producing a trivial extractive summary so the pipeline
@@ -54,6 +75,7 @@ public struct StubSummarizer: Summarizing {
 #if canImport(MLXLLM)
 import MLXLLM
 import MLXLMCommon
+import Hub
 
 /// Local summarizer. An actor so the model weights are loaded once and reused
 /// across the many calls map-reduce makes for a long meeting. Each call uses a
@@ -70,15 +92,33 @@ public actor MLXSummarizer: Summarizing {
         self.modelID = modelID
     }
 
-    private func context() async throws -> ModelContext {
+    /// App-owned download location, instead of the default ~/Documents/huggingface.
+    public static var modelDownloadBase: URL {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+        )) ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("MeetingAssistant/MLXModels", isDirectory: true)
+    }
+
+    public func prepare(progress: SummarizeProgressHandler?) async throws {
+        _ = try await context(progress: progress)
+    }
+
+    private func context(progress: SummarizeProgressHandler?) async throws -> ModelContext {
         if let modelContext { return modelContext }
-        let ctx = try await loadModel(id: modelID)
+        let hub = HubApi(downloadBase: Self.modelDownloadBase)
+        let label = "Downloading summary model (~1.7 GB)…"
+        progress?(SummarizeProgress(fraction: 0, phase: label))
+        let ctx = try await loadModel(hub: hub, id: modelID) { p in
+            progress?(SummarizeProgress(fraction: p.fractionCompleted, phase: label))
+        }
+        progress?(SummarizeProgress(fraction: nil, phase: "Loading summary model…"))
         modelContext = ctx
         return ctx
     }
 
     public func summarize(transcript: String, meetingTitle: String) async throws -> MeetingSummary {
-        let ctx = try await context()
+        let ctx = try await context(progress: nil)
         // Fresh session per call → no KV cache growth across chunks. Cap output
         // so a single summary can't run away in tokens/memory.
         let session = ChatSession(ctx, generateParameters: GenerateParameters(maxTokens: 800))
