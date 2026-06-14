@@ -27,6 +27,8 @@ public final class MeetingProcessor {
         let micURL = dir.appendingPathComponent(recording.micAudioFile)
         let systemURL = dir.appendingPathComponent(recording.systemAudioFile)
 
+        let started = Date()
+
         // 1. Transcribe each channel (carrying the channel through onto segments).
         //    The transcriber serializes its shared model download/load internally.
         let onProgress: TranscribeProgressHandler = { p in progress?(p.fraction, p.phase) }
@@ -39,9 +41,24 @@ public final class MeetingProcessor {
         let cleaned = HallucinationFilter.clean(allSegments)
         let labeled = SpeakerFuser.fuse(segments: cleaned, timeline: recording.timeline)
 
-        // 3. Render and persist the transcript.
-        let transcript = TranscriptFormatter.document(meeting: recording.meeting, segments: labeled)
+        // 3. Render with real wall-clock timestamps (baseDate = recording start) and
+        //    a note recording how long transcription took.
+        let elapsed = Date().timeIntervalSince(started)
+        let note = "Transcribed in \(Self.humanDuration(elapsed))"
+        progress?(1.0, note)
+        let transcript = TranscriptFormatter.document(
+            meeting: recording.meeting,
+            segments: labeled,
+            baseDate: recording.recordedAt,
+            note: note
+        )
         try store.saveTranscript(transcript, for: recording.meeting.id)
         return transcript
+    }
+
+    /// "2m 14s" / "47s".
+    static func humanDuration(_ t: TimeInterval) -> String {
+        let s = Int(t.rounded())
+        return s >= 60 ? "\(s / 60)m \(s % 60)s" : "\(s)s"
     }
 }

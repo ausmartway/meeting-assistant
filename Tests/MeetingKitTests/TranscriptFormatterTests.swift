@@ -37,4 +37,17 @@ struct TranscriptFormatterTests {
     func emptyInput() {
         #expect(TranscriptFormatter.transcriptBody([]) == "")
     }
+
+    @Test("with a base date, stamps each turn with the real wall-clock time")
+    func realClockTimestamps() {
+        // 1970-01-01 00:00:00 UTC as the recording start (deterministic).
+        let base = Date(timeIntervalSince1970: 0)
+        let utc = TimeZone(identifier: "UTC")!
+        let segments = [
+            LabeledSegment(start: 0, end: 2, text: "first", speaker: "Me"),
+            LabeledSegment(start: 65, end: 70, text: "later", speaker: "Alice"),
+        ]
+        let md = TranscriptFormatter.transcriptBody(segments, baseDate: base, timeZone: utc)
+        #expect(md == "**[00:00:00] Me:** first\n**[00:01:05] Alice:** later")
+    }
 }

@@ -136,7 +136,15 @@ public actor WhisperKitTranscriber: Transcribing {
         progress: TranscribeProgressHandler?
     ) async throws -> [TranscriptSegment] {
         let pipe = try await pipeline(progress: progress)
-        progress?(TranscribeProgress(fraction: nil, phase: "Transcribing…"))
+        let label = channel == .microphone ? "Transcribing your audio…" : "Transcribing others' audio…"
+        progress?(TranscribeProgress(fraction: 0, phase: label))
+
+        // Load the audio so we know its total duration — that lets us report a
+        // real progress fraction (latest transcribed second / total seconds).
+        let samples = try await Self.loadSamples(audioFile)
+        let total = max(1.0, Double(samples.count) / 16_000.0)
+        let reporter = SegmentProgressReporter(total: total, phase: label, handler: progress)
+
         // language: nil + detectLanguage: true → auto-detect per meeting.
         // VAD chunking processes long audio in voice-activity segments with a
         // bounded worker count, so a multi-hour meeting transcribes with flat
@@ -147,7 +155,11 @@ public actor WhisperKitTranscriber: Transcribing {
             concurrentWorkerCount: 2,
             chunkingStrategy: .vad
         )
-        let results = try await pipe.transcribe(audioPath: audioFile.path, decodeOptions: options)
+        let results = try await pipe.transcribe(
+            audioArray: samples,
+            decodeOptions: options,
+            segmentCallback: { segs in reporter.update(segs) }
+        )
         let raw = results.flatMap { result in
             result.segments.map {
                 TranscriptSegment(
@@ -160,6 +172,13 @@ public actor WhisperKitTranscriber: Transcribing {
             }
         }
         return HallucinationFilter.clean(raw)
+    }
+
+    /// Load an audio file as 16 kHz mono float samples (resampled by WhisperKit).
+    private static func loadSamples(_ url: URL) async throws -> [Float] {
+        let results = await AudioProcessor.loadAudio(at: [url.path])
+        guard let first = results.first else { return [] }
+        return try first.get()
     }
 
     /// Download (once, with progress + one clean retry) and load the model.
@@ -245,6 +264,31 @@ public actor WhisperKitTranscriber: Transcribing {
             downloadBase: Self.modelDownloadBase,
             progressCallback: progress
         )
+    }
+}
+
+/// Turns WhisperKit's segment-discovery callbacks into a 0...1 progress fraction
+/// (latest transcribed second / total seconds). Lock-guarded because WhisperKit
+/// invokes the callback from its own threads.
+private final class SegmentProgressReporter: @unchecked Sendable {
+    private let total: Double
+    private let phase: String
+    private let handler: TranscribeProgressHandler?
+    private let lock = NSLock()
+    private var maxEnd: Double = 0
+
+    init(total: Double, phase: String, handler: TranscribeProgressHandler?) {
+        self.total = total
+        self.phase = phase
+        self.handler = handler
+    }
+
+    func update(_ segments: [TranscriptionSegment]) {
+        lock.lock()
+        for s in segments where Double(s.end) > maxEnd { maxEnd = Double(s.end) }
+        let fraction = min(1.0, maxEnd / total)
+        lock.unlock()
+        handler?(TranscribeProgress(fraction: fraction, phase: phase))
     }
 }
 #endif
