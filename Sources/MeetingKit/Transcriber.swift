@@ -59,8 +59,18 @@ public struct WhisperKitTranscriber: Transcribing {
         self.model = model
     }
 
+    /// App-owned location for downloaded Whisper models, instead of the
+    /// swift-transformers default under ~/Documents/huggingface.
+    public static var modelDownloadBase: URL {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+        )) ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("MeetingAssistant/WhisperModels", isDirectory: true)
+    }
+
     public func transcribe(audioFile: URL, channel: AudioChannel) async throws -> [TranscriptSegment] {
-        let pipe = try await WhisperKit(model: model.rawValue)
+        let config = WhisperKitConfig(model: model.rawValue, downloadBase: Self.modelDownloadBase)
+        let pipe = try await WhisperKit(config)
         // language: nil + detectLanguage: true → auto-detect per meeting
         // (handles English, Mandarin, and reasonable code-switching).
         let options = DecodingOptions(language: nil, detectLanguage: true)
