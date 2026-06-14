@@ -177,20 +177,29 @@ public actor WhisperKitTranscriber: Transcribing {
     }
 
     private func buildPipeline(progress: TranscribeProgressHandler?) async throws -> WhisperKit {
-        let downloadLabel = "Downloading model (\(model.approxDownloadDescription))…"
-        let report: ProgressCallback = { p in
-            progress?(TranscribeProgress(fraction: p.fractionCompleted, phase: downloadLabel))
-        }
+        // Expected on-disk folder for this model.
+        let localFolder = Self.repoCacheDir.appendingPathComponent("openai_whisper-\(model.rawValue)")
+        let alreadyDownloaded = Self.isModelComplete(at: localFolder)
 
-        progress?(TranscribeProgress(fraction: 0, phase: downloadLabel))
         let folder: URL
-        do {
-            folder = try await download(report)
-        } catch {
-            // A partial/corrupt download can't be resumed cleanly — wipe and retry.
-            try? FileManager.default.removeItem(at: Self.repoCacheDir)
-            progress?(TranscribeProgress(fraction: 0, phase: "Retrying download…"))
-            folder = try await download(report)
+        if alreadyDownloaded {
+            // Cached from a previous run — DON'T re-download or re-verify over the
+            // network. Just load it. (This is the fix for "downloads every launch".)
+            folder = localFolder
+        } else {
+            let downloadLabel = "Downloading model (\(model.approxDownloadDescription))…"
+            let report: ProgressCallback = { p in
+                progress?(TranscribeProgress(fraction: p.fractionCompleted, phase: downloadLabel))
+            }
+            progress?(TranscribeProgress(fraction: 0, phase: downloadLabel))
+            do {
+                folder = try await download(report)
+            } catch {
+                // A partial/corrupt download can't be resumed cleanly — wipe and retry.
+                try? FileManager.default.removeItem(at: Self.repoCacheDir)
+                progress?(TranscribeProgress(fraction: 0, phase: "Retrying download…"))
+                folder = try await download(report)
+            }
         }
 
         progress?(TranscribeProgress(fraction: nil, phase: "Loading model…"))
@@ -203,18 +212,31 @@ public actor WhisperKitTranscriber: Transcribing {
             audioEncoderCompute: .cpuAndGPU,
             textDecoderCompute: .cpuAndGPU
         )
-        // Use the already-downloaded model files (modelFolder), but keep
-        // download:true so WhisperKit can fetch the small tokenizer — which lives
-        // in a different repo and is NOT part of the model download above. With
-        // download:false the tokenizer load hangs. tokenizerFolder defaults to
-        // downloadBase, so it lands in our app-owned folder too.
-        let loaded = try await WhisperKit(WhisperKitConfig(
-            downloadBase: Self.modelDownloadBase,
-            modelFolder: folder.path,
-            computeOptions: compute,
-            download: true
-        ))
-        return loaded
+        // When cached, load fully offline (download:false) so nothing hits the
+        // network — the tokenizer is already on disk too. On a first run we need
+        // download:true so WhisperKit can fetch the tokenizer (a separate repo).
+        func makeConfig(allowDownload: Bool) -> WhisperKitConfig {
+            WhisperKitConfig(
+                downloadBase: Self.modelDownloadBase,
+                modelFolder: folder.path,
+                computeOptions: compute,
+                download: allowDownload
+            )
+        }
+        do {
+            return try await WhisperKit(makeConfig(allowDownload: !alreadyDownloaded))
+        } catch where alreadyDownloaded {
+            // Offline load failed (e.g. tokenizer missing) — allow a fetch and retry.
+            return try await WhisperKit(makeConfig(allowDownload: true))
+        }
+    }
+
+    /// True when the model folder has the core CoreML components on disk.
+    private static func isModelComplete(at folder: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: folder.path) else { return false }
+        let required = ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc", "config.json"]
+        return required.allSatisfy { fm.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
     private func download(_ progress: @escaping ProgressCallback) async throws -> URL {
