@@ -84,15 +84,34 @@ Key components (all in `Sources/MeetingKit`):
 End users should follow [Install](#install) above. To build it yourself:
 
 ```sh
-swift test               # run the unit tests (needs full Xcode toolchain active)
+swift test                   # run the unit tests (needs full Xcode toolchain active)
+./Scripts/setup-signing.sh   # ONE TIME: create a stable signing identity (see below)
 ./Scripts/install.sh --run   # build, install to /Applications (single copy), launch
 ./Scripts/make-dmg.sh        # package a drag-to-install DMG
 ```
 
 On first launch the app opens a **setup window** that guides you through granting
 Screen & System Audio Recording, Microphone, Calendar, Accessibility, and
-Notifications — no need to dig through Settings. The build is ad-hoc signed, so the
-first launch needs a right-click → **Open** to clear Gatekeeper.
+Notifications — no need to dig through Settings.
+
+### Why `setup-signing.sh` matters (persistent permissions)
+
+macOS ties permission grants (Screen & Audio Recording, Accessibility) to the
+app's **code-signing identity**. A plain build is *ad-hoc* signed — it has no
+stable identity, so every rebuild looks like a brand-new app and those grants
+silently reset (the checkbox stays on in System Settings, but the app can't use
+the permission).
+
+`./Scripts/setup-signing.sh` creates a **self-signed certificate** in a dedicated
+keychain (the private key never leaves your Mac). `build-app.sh` then signs every
+build with that one constant identity, so you **grant the permissions once and
+they persist across all future local builds**. Run it once, then use
+`install.sh`/`make-dmg.sh` as normal.
+
+> The certificate is self-signed (not Apple-notarized), so the first launch of
+> each install still needs **System Settings → Privacy & Security → Open Anyway**
+> (macOS 15/26) or **right-click → Open** (macOS 14). A fully clean-opening,
+> always-persistent build requires an Apple Developer ID + notarization.
 
 ## On-device transcription
 

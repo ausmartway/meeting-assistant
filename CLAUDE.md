@@ -105,14 +105,25 @@ testable; follow TDD for it.
 
 ## Distribution / signing
 
-There are no code-signing certificates on this machine, so builds are **ad-hoc
-signed**. Consequences: Gatekeeper blocks the first launch — on **macOS 15/26**
-the user must approve it via **System Settings → Privacy & Security → Open
-Anyway** (the old right-click → Open button was removed in macOS 15; it still
-works on **macOS 14**). TCC grants (Screen Recording, Mic, Calendar) are tied to
-the signature hash and may reset on rebuild. A clean-opening, distributable DMG
-would need an Apple Developer ID cert + notarization (notarytool is installed;
-the account is not).
+There is no Apple Developer ID cert on this machine, so builds are not notarized.
+Gatekeeper blocks the first launch — on **macOS 15/26** the user must approve it
+via **System Settings → Privacy & Security → Open Anyway** (the old right-click →
+Open button was removed in macOS 15; it still works on **macOS 14**). A
+clean-opening, distributable DMG would need an Apple Developer ID + notarization
+(notarytool is installed; the account is not).
+
+**Signing identity (important for TCC).** macOS anchors TCC grants (Screen
+Recording, Accessibility) to the code-signing identity. *Ad-hoc* signing has no
+stable identity, so grants silently reset on every rebuild. `Scripts/build-app.sh`
+therefore prefers a **stable self-signed certificate**: run
+`Scripts/setup-signing.sh` once — it creates the cert in a dedicated keychain
+(`~/Library/Keychains/meeting-assistant-signing.keychain-db`, password in
+`~/.config/meeting-assistant/`, both outside the repo) and `build-app.sh` signs by
+that identity's hash with `--keychain`, giving a constant designated requirement
+(`certificate root = H"…"`) so grants persist across local builds. With no cert
+set up, it falls back to ad-hoc. **CI release builds remain ad-hoc** (no key is
+stored in the repo), so for persistent permissions install via
+`Scripts/install.sh` locally rather than the CI DMG.
 
 ## TCC permissions
 

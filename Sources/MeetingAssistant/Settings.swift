@@ -18,9 +18,10 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(transcriptionWorkers, forKey: Keys.transcriptionWorkers) }
     }
 
-    /// Show a Dock icon as an always-visible way to reach the app. Off by default
-    /// (clean menu-bar-only experience); turn on when the menu-bar icon gets
-    /// hidden for lack of space — e.g. on a notched built-in laptop display.
+    /// Show a Dock icon as an always-visible way to reach the app. On by default
+    /// so the app is always reachable even when the menu-bar icon is hidden for
+    /// lack of space (e.g. a notched built-in laptop display); can be turned off
+    /// for a clean menu-bar-only experience.
     @Published var showDockIcon: Bool {
         didSet { defaults.set(showDockIcon, forKey: Keys.showDockIcon) }
     }
@@ -40,7 +41,10 @@ final class AppSettings: ObservableObject {
         ) ?? .largeTurbo
         let stored = defaults.integer(forKey: Keys.transcriptionWorkers) // 0 when unset
         self.transcriptionWorkers = Self.workerRange.contains(stored) ? stored : 4
-        self.showDockIcon = defaults.bool(forKey: Keys.showDockIcon) // false when unset
+        // Default ON the first time (key absent); respect the user's choice after.
+        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) == nil
+            ? true
+            : defaults.bool(forKey: Keys.showDockIcon)
     }
 
     /// Build the on-device transcriber (real WhisperKit when compiled in).

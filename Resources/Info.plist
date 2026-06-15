@@ -13,15 +13,14 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.1</string>
+    <string>0.3.0</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
 
-    <!-- Menu-bar app: no Dock icon by default. -->
-    <key>LSUIElement</key>
-    <true/>
+    <!-- Launches with a Dock icon by default; the "Show icon in the Dock" setting
+         can hide it at runtime via NSApp.setActivationPolicy(.accessory). -->
 
     <!-- TCC usage strings (Screen Recording has no plist key; granted via prompt). -->
     <key>NSMicrophoneUsageDescription</key>

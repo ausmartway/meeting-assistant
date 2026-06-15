@@ -33,9 +33,36 @@ mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "${BIN_PATH}/${EXE_NAME}" "${MACOS_DIR}/${EXE_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
 
-echo "▸ Ad-hoc code signing…"
+# Choose the signing identity. Preference order:
+#   1. our stable self-signed cert in the dedicated keychain, if set up (so TCC
+#      permission grants persist across rebuilds — run ./Scripts/setup-signing.sh)
+#   2. ad-hoc (works, but Screen Recording / Accessibility grants reset each build)
+SIGN_KEYCHAIN="$HOME/Library/Keychains/meeting-assistant-signing.keychain-db"
+SIGN_PW_FILE="$HOME/.config/meeting-assistant/signing-keychain-password"
+IDENTITY="-"        # ad-hoc fallback
+KEYCHAIN_ARGS=()
+
+if [[ -f "$SIGN_KEYCHAIN" && -f "$SIGN_PW_FILE" ]]; then
+  security unlock-keychain -p "$(cat "$SIGN_PW_FILE")" "$SIGN_KEYCHAIN" 2>/dev/null || true
+  # Resolve the cert's SHA-1 hash; signing by hash works even though a self-signed
+  # cert is "untrusted" (and thus hidden from the default identity search).
+  HASH="$(security find-identity -p codesigning "$SIGN_KEYCHAIN" 2>/dev/null \
+            | awk '/Meeting Assistant Self-Signed/ {print $2; exit}')"
+  if [[ -n "$HASH" ]]; then
+    IDENTITY="$HASH"
+    KEYCHAIN_ARGS=(--keychain "$SIGN_KEYCHAIN")
+  fi
+fi
+
+if [[ "$IDENTITY" == "-" ]]; then
+  echo "▸ Ad-hoc code signing (no stable identity — Screen Recording / Accessibility"
+  echo "  grants reset on each build; run ./Scripts/setup-signing.sh once to fix)…"
+else
+  echo "▸ Code signing with stable self-signed identity ($IDENTITY)…"
+fi
 codesign --force --deep \
-  --sign - \
+  --sign "$IDENTITY" \
+  "${KEYCHAIN_ARGS[@]}" \
   --entitlements Resources/MeetingAssistant.entitlements \
   "$APP_DIR"
 

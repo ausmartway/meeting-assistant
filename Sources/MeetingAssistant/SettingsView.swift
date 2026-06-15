@@ -26,9 +26,10 @@ struct SettingsView: View {
             .onChange(of: state.settings.showDockIcon) {
                 state.applyDockIconSetting()
             }
-            Text("Adds a Dock icon so you can always open Meeting Assistant — handy "
+            Text("Keeps a Dock icon so you can always open Meeting Assistant — even "
                  + "when the menu-bar icon is hidden because the menu bar is full "
-                 + "(for example on a laptop screen with a notch).")
+                 + "(for example on a laptop screen with a notch). Turn off for a "
+                 + "menu-bar-only app.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
