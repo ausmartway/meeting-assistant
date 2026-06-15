@@ -15,6 +15,11 @@ on:
 permissions:
   contents: write        # needed to create the Release and upload the DMG
 
+env:
+  # upload-artifact@v5 still bundles Node 20; run all JS actions on Node 24 to
+  # clear the deprecation warning (this becomes the default on 2026-06-16).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     # macos-15 ships Xcode 16 (macOS 15 SDK). WhisperKit needs it: it references
