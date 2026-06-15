@@ -106,10 +106,13 @@ testable; follow TDD for it.
 ## Distribution / signing
 
 There are no code-signing certificates on this machine, so builds are **ad-hoc
-signed**. Consequences: Gatekeeper requires a one-time right-click → Open, and TCC
-grants (Screen Recording, Mic, Calendar) are tied to the signature hash and may
-reset on rebuild. A clean-opening, distributable DMG would need an Apple Developer
-ID cert + notarization (notarytool is installed; the account is not).
+signed**. Consequences: Gatekeeper blocks the first launch — on **macOS 15/26**
+the user must approve it via **System Settings → Privacy & Security → Open
+Anyway** (the old right-click → Open button was removed in macOS 15; it still
+works on **macOS 14**). TCC grants (Screen Recording, Mic, Calendar) are tied to
+the signature hash and may reset on rebuild. A clean-opening, distributable DMG
+would need an Apple Developer ID cert + notarization (notarytool is installed;
+the account is not).
 
 ## TCC permissions
 

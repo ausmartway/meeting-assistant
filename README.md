@@ -11,11 +11,15 @@ Target hardware: MacBook Pro M1 Pro, macOS 14 (Sonoma)+. Runs comfortably on
 
 1. Download `MeetingAssistant.dmg` and double-click it.
 2. Drag **Meeting Assistant** onto the **Applications** folder in the window.
-3. Open **Applications**, then **right-click Meeting Assistant → Open** (do this
-   the first time only). Because the app is self-distributed and not signed by a
-   paid Apple Developer account, a normal double-click shows "unidentified
-   developer" — right-click → Open lets you run it anyway. Click **Open** in the
-   dialog that appears.
+3. Open **Applications** and double-click **Meeting Assistant**. Because the app
+   is self-distributed and not signed by a paid Apple Developer account, macOS
+   blocks it the first time. To allow it (first launch only):
+   - On **macOS 15 (Sequoia) and later** (incl. macOS 26): after the "blocked"
+     message, open **System Settings → Privacy & Security**, scroll to the
+     **Security** section, click **Open Anyway**, authenticate, then click
+     **Open Anyway** again. (Apple removed the old right-click → Open button.)
+   - On **macOS 14 (Sonoma)**: **right-click Meeting Assistant → Open**, then
+     click **Open** in the dialog.
 4. The app lives in your **menu bar** (top-right of the screen), not the Dock. On
    first launch it opens a setup window that walks you through turning on the
    permissions it needs. Follow the checklist until everything shows a green

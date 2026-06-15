@@ -79,10 +79,12 @@ jobs:
 
           1. Download \`MeetingAssistant.dmg\` below and open it.
           2. Drag **Meeting Assistant** onto **Applications**.
-          3. In Applications, **right-click Meeting Assistant → Open** the first
-             time (this build is self-distributed and not signed by a paid Apple
-             Developer account, so a normal double-click shows \"unidentified
-             developer\"). Click **Open** in the dialog.
+          3. Double-click the app. This build is self-distributed (not notarized),
+             so macOS blocks the first launch. To allow it (first time only):
+             - **macOS 15 / 26:** open **System Settings → Privacy & Security**,
+               scroll to **Security**, click **Open Anyway**, authenticate, then
+               **Open Anyway** again. (Apple removed the right-click → Open button.)
+             - **macOS 14:** **right-click the app → Open**, then click **Open**.
 
           The app lives in your menu bar and walks you through setup on first launch."
 

@@ -47,4 +47,5 @@ hdiutil create \
 SIZE="$(du -h "$DMG_PATH" | cut -f1)"
 echo "✓ Built ${DMG_PATH} (${SIZE})"
 echo "  Install: open the DMG and drag “${APP_NAME}” into Applications."
-echo "  First launch: right-click the app → Open to bypass Gatekeeper (unsigned build)."
+echo "  First launch (macOS 15/26): System Settings → Privacy & Security → Open Anyway."
+echo "  First launch (macOS 14): right-click the app → Open."
