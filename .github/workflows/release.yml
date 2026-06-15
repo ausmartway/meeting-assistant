@@ -23,7 +23,7 @@ jobs:
     # a newer SDK is fine.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Select newest Xcode and show toolchain
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Upload DMG as a build artifact
         # Always available (including manual runs) so you can grab the build even
         # when it isn't a tagged release.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: MeetingAssistant-dmg
           path: build/MeetingAssistant.dmg
