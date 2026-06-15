@@ -1,0 +1,87 @@
+name: Release
+
+# Build the ad-hoc-signed DMG and publish it to a GitHub Release.
+#
+# Works TODAY with no Apple Developer ID: the produced DMG is ad-hoc signed, so
+# users open it once with right-click → Open to clear Gatekeeper. When you later
+# get a Developer ID cert, add the signing + notarization steps marked below and
+# the same workflow ships a clean-opening, notarized DMG.
+on:
+  push:
+    tags:
+      - "v*"            # e.g. `git tag v0.1.0 && git push --tags`
+  workflow_dispatch: {}  # also runnable by hand from the Actions tab (build only)
+
+permissions:
+  contents: write        # needed to create the Release and upload the DMG
+
+jobs:
+  build:
+    runs-on: macos-14    # Apple Silicon runner with full Xcode (WhisperKit needs
+                         # the Metal/CoreML compiler, which Command Line Tools lack)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select full Xcode and show toolchain
+        run: |
+          # The runner's default Xcode is the full toolchain (not CLT); make it
+          # explicit so the WhisperKit Metal/CoreML build succeeds.
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          swift --version
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Build DMG
+        run: |
+          chmod +x Scripts/*.sh
+          ./Scripts/make-dmg.sh
+
+      # --- Signing & notarization (add when you have a Developer ID) ----------
+      # - name: Sign & notarize
+      #   run: |
+      #     codesign --force --options runtime --timestamp \
+      #       --sign "Developer ID Application: Your Name (TEAMID)" \
+      #       --entitlements Resources/MeetingAssistant.entitlements \
+      #       "build/Meeting Assistant.app"
+      #     # Rebuild the DMG from the signed app, then:
+      #     xcrun notarytool submit build/MeetingAssistant.dmg \
+      #       --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
+      #       --password "$APP_SPECIFIC_PASSWORD" --wait
+      #     xcrun stapler staple build/MeetingAssistant.dmg
+      # -----------------------------------------------------------------------
+
+      - name: Upload DMG as a build artifact
+        # Always available (including manual runs) so you can grab the build even
+        # when it isn't a tagged release.
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetingAssistant-dmg
+          path: build/MeetingAssistant.dmg
+
+      - name: Publish GitHub Release
+        # Only on tag pushes — attaches the DMG to a Release named after the tag.
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="## Install
+
+          1. Download \`MeetingAssistant.dmg\` below and open it.
+          2. Drag **Meeting Assistant** onto **Applications**.
+          3. In Applications, **right-click Meeting Assistant → Open** the first
+             time (this build is self-distributed and not signed by a paid Apple
+             Developer account, so a normal double-click shows \"unidentified
+             developer\"). Click **Open** in the dialog.
+
+          The app lives in your menu bar and walks you through setup on first launch."
+
+          # Create the release if it's new; otherwise just (re)attach the DMG.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/MeetingAssistant.dmg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" build/MeetingAssistant.dmg \
+              --title "Meeting Assistant $GITHUB_REF_NAME" \
+              --notes "$NOTES"
+          fi
