@@ -7,11 +7,31 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            generalTab.tabItem { Label("General", systemImage: "gearshape") }
             permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }
             modelsTab.tabItem { Label("Models", systemImage: "cpu") }
         }
         .frame(width: 460, height: 360)
         .task { await state.permissions.refresh() }
+    }
+
+    // MARK: - General
+
+    private var generalTab: some View {
+        Form {
+            Toggle("Show icon in the Dock", isOn: Binding(
+                get: { state.settings.showDockIcon },
+                set: { state.settings.showDockIcon = $0 }
+            ))
+            .onChange(of: state.settings.showDockIcon) {
+                state.applyDockIconSetting()
+            }
+            Text("Adds a Dock icon so you can always open Meeting Assistant — handy "
+                 + "when the menu-bar icon is hidden because the menu bar is full "
+                 + "(for example on a laptop screen with a notch).")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding()
     }
 
     // MARK: - Permissions

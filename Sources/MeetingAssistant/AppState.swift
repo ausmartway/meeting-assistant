@@ -27,6 +27,14 @@ enum CaptureStatus: Equatable {
 /// post-meeting processing.
 @MainActor
 final class AppState: ObservableObject {
+    /// Weak global handle so the app delegate (Dock-click / reopen handling) can
+    /// reach the single coordinator without creating a second instance.
+    static weak var shared: AppState?
+
+    /// Set by the menu-bar label once SwiftUI's `openWindow` action is available,
+    /// so non-view code (a Dock click when the menu-bar icon is hidden) can bring
+    /// the main window forward.
+    var openMainWindow: (() -> Void)?
     @Published private(set) var status: CaptureStatus = .idle
     @Published private(set) var upcoming: [Meeting] = []
     @Published private(set) var recordings: [MeetingRecording] = []
@@ -119,6 +127,8 @@ final class AppState: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        Self.shared = self
     }
 
     /// Request a single capability (the onboarding checklist drives this), then
@@ -138,6 +148,7 @@ final class AppState: ObservableObject {
     /// Begin background polling: refresh the calendar and check auto-start every
     /// 30 seconds. Cheap — it only lists events and checks running apps.
     func start() {
+        applyDockIconSetting()
         refreshUpcoming()
         Task { await prepareModel() }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -188,6 +199,12 @@ final class AppState: ObservableObject {
     func refreshUpcoming() {
         guard permissions.calendar == .granted else { return }
         upcoming = calendar.upcomingMeetings()
+    }
+
+    /// Show or hide the Dock icon per the user's preference. A Dock icon is an
+    /// always-visible way in when the menu-bar icon is hidden for lack of space.
+    func applyDockIconSetting() {
+        NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
     }
 
     // MARK: - Capture control
