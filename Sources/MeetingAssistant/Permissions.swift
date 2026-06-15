@@ -17,6 +17,15 @@ enum PermissionState {
         case .notDetermined: return "questionmark.circle"
         }
     }
+
+    /// Bridge to the pure, testable setup model in MeetingKit.
+    var setupStatus: SetupPermissionStatus {
+        switch self {
+        case .granted: return .granted
+        case .denied: return .denied
+        case .notDetermined: return .notDetermined
+        }
+    }
 }
 
 /// Centralizes the macOS permission checks and prompts the app needs:

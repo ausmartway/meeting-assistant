@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import AppKit
 import UserNotifications
 import MeetingKit
@@ -9,11 +10,13 @@ enum CaptureStatus: Equatable {
     case recording(Meeting)
     case processing(Meeting)
 
+    /// Friendly, plain-English status — "Idle" reads as "off" for an app that is
+    /// actively watching the calendar, so the idle state says what it's doing.
     var label: String {
         switch self {
-        case .idle: return "Idle"
+        case .idle: return "Watching for meetings"
         case .recording(let m): return "Recording: \(m.title)"
-        case .processing(let m): return "Processing: \(m.title)"
+        case .processing(let m): return "Making transcript: \(m.title)"
         }
     }
 }
@@ -40,6 +43,9 @@ final class AppState: ObservableObject {
     @Published private(set) var modelPreparing = false
     @Published private(set) var modelDownloadFraction: Double?
     @Published private(set) var modelStatusText: String?
+    /// True only after a download/load attempt actually failed — gates the retry UI
+    /// so it never shows before the first attempt.
+    @Published private(set) var modelFailed = false
 
     let settings: AppSettings
     let permissions: Permissions
@@ -50,6 +56,33 @@ final class AppState: ObservableObject {
     private var capture: CaptureSession?
     private var pollTimer: Timer?
     private var notifiedMeetingIDs: Set<String> = []
+    private var cancellables: Set<AnyCancellable> = []
+
+    /// Set once the main window has been auto-opened at launch, so we only do it
+    /// the first time the process runs (not every time the window's task fires).
+    var hasAutoOpenedWindow = false
+
+    /// Pure, testable summary of first-run setup, derived from current permissions.
+    var setup: SetupState {
+        SetupState(statuses: [
+            .screenRecording: permissions.screenRecording.setupStatus,
+            .microphone: permissions.microphone.setupStatus,
+            .calendar: permissions.calendar.setupStatus,
+            .accessibility: permissions.accessibility.setupStatus,
+            .notifications: permissions.notifications.setupStatus,
+        ])
+    }
+
+    /// The menu-bar icon: a warning until setup is complete, otherwise reflects
+    /// what the app is doing (a filled record dot while recording).
+    var menuBarSymbol: String {
+        guard setup.isComplete else { return "exclamationmark.triangle.fill" }
+        switch status {
+        case .idle: return "waveform"
+        case .recording: return "record.circle.fill"
+        case .processing: return "gearshape.2"
+        }
+    }
 
     /// Shared, prepared transcriber reused across all processing so the model is
     /// downloaded/loaded exactly once (at launch) rather than per meeting.
@@ -69,6 +102,35 @@ final class AppState: ObservableObject {
             model: settings.transcriptionModel,
             workers: settings.transcriptionWorkers
         )
+        // Re-publish permission changes so onboarding/menu views observing AppState
+        // update live as the user grants each capability.
+        permissions.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
+        // Screen Recording / Accessibility are granted in System Settings, outside
+        // the app. Re-check permissions whenever the user switches back so the
+        // onboarding checklist updates the moment they return.
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    await self?.permissions.refresh()
+                    self?.refreshUpcoming()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Request a single capability (the onboarding checklist drives this), then
+    /// refresh anything that depends on it.
+    func grant(_ capability: SetupCapability) async {
+        switch capability {
+        case .screenRecording: permissions.requestScreenRecording()
+        case .microphone:       await permissions.requestMicrophone()
+        case .calendar:         await permissions.requestCalendar(); refreshUpcoming()
+        case .accessibility:    permissions.requestAccessibility()
+        case .notifications:    await permissions.requestNotifications()
+        }
     }
 
     // MARK: - Lifecycle
@@ -86,8 +148,10 @@ final class AppState: ObservableObject {
     /// Download + load the transcription model up front (at launch, or after the
     /// user changes the model in Settings). Processing waits for this to finish.
     func prepareModel() async {
+        lastError = nil
         modelPreparing = true
         modelReady = false
+        modelFailed = false
         modelStatusText = "Preparing model…"
         transcriber = Backends.makeTranscriber(
             model: settings.transcriptionModel,
@@ -104,8 +168,9 @@ final class AppState: ObservableObject {
             modelReady = true
             modelStatusText = "Model ready"
         } catch {
-            modelStatusText = "Model download failed — retry in Settings"
-            lastError = "Model preparation failed: \(error.localizedDescription)"
+            modelFailed = true
+            modelStatusText = "Download failed — tap to retry"
+            lastError = userFacingMessage(for: .modelDownload, error: error)
         }
         modelPreparing = false
         modelDownloadFraction = nil
@@ -123,11 +188,6 @@ final class AppState: ObservableObject {
     func refreshUpcoming() {
         guard permissions.calendar == .granted else { return }
         upcoming = calendar.upcomingMeetings()
-    }
-
-    /// Apply the VAD worker-count setting to the live transcriber (no model reload).
-    func applyWorkerSetting() async {
-        await transcriber.setConcurrentWorkers(settings.transcriptionWorkers)
     }
 
     // MARK: - Capture control
@@ -156,13 +216,14 @@ final class AppState: ObservableObject {
     /// Start capturing a meeting (also the manual Start action).
     func startCapture(for meeting: Meeting) async {
         guard case .idle = status else { return }
+        lastError = nil
         let session = CaptureSession(meeting: meeting, store: store)
         do {
             try await session.start()
             capture = session
             status = .recording(meeting)
         } catch {
-            lastError = "Failed to start capture: \(error.localizedDescription)"
+            lastError = userFacingMessage(for: .startRecording, error: error)
         }
     }
 
@@ -175,7 +236,7 @@ final class AppState: ObservableObject {
             status = .processing(meeting)
             await process(meeting)
         } catch {
-            lastError = "Failed to stop capture: \(error.localizedDescription)"
+            lastError = userFacingMessage(for: .stopRecording, error: error)
             status = .idle
         }
         recordings = store.allRecordings()
@@ -199,7 +260,7 @@ final class AppState: ObservableObject {
             _ = try await processor.process(recording, progress: progress)
             postNotification(title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
         } catch {
-            lastError = "Processing failed: \(error.localizedDescription)"
+            lastError = userFacingMessage(for: .transcribing, error: error)
         }
         progressFraction = nil
         progressPhase = nil
@@ -220,6 +281,9 @@ final class AppState: ObservableObject {
     func transcript(for recording: MeetingRecording) -> String? {
         store.transcript(for: recording.meeting.id)
     }
+
+    /// Clear the current error banner (user tapped it, or it auto-dismissed).
+    func dismissError() { lastError = nil }
 
     // MARK: - Notifications
 

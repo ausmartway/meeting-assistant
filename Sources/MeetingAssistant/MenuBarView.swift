@@ -15,8 +15,25 @@ struct MenuBarView: View {
 
             Divider()
 
-            Label(state.status.label, systemImage: statusSymbol)
-                .font(.subheadline)
+            // Setup is the first thing to fix — until it's done, recording can't work.
+            if !state.setup.isComplete {
+                Button {
+                    openWindow(id: "main")
+                } label: {
+                    Label("Finish setup to start recording", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Label {
+                Text(state.status.label)
+            } icon: {
+                Image(systemName: statusSymbol)
+                    .foregroundStyle(isRecording ? .red : .primary)
+            }
+            .font(.subheadline)
 
             // Model readiness (downloaded at launch; processing waits for it).
             if state.modelPreparing {
@@ -34,8 +51,18 @@ struct MenuBarView: View {
                     }
                 }
             } else if state.modelReady {
-                Label("Model ready", systemImage: "checkmark.seal")
+                Label("Ready to transcribe", systemImage: "checkmark.seal")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if state.modelFailed {
+                // Preparation failed — offer a one-tap retry here, rather than
+                // sending the user hunting through Settings.
+                Button {
+                    Task { await state.prepareModel() }
+                } label: {
+                    Label(state.modelStatusText ?? "Download failed — tap to retry",
+                          systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
             }
 
             if let next = state.upcoming.first {
@@ -54,7 +81,7 @@ struct MenuBarView: View {
             Divider()
 
             HStack {
-                Button("Open Window") { openWindow(id: "main") }
+                Button("Show Transcripts") { openWindow(id: "main") }
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
@@ -101,16 +128,21 @@ struct MenuBarView: View {
                 Button {
                     Task { await state.startAdHocCapture() }
                 } label: {
-                    Label("Record Ad-hoc Meeting", systemImage: "record.circle.fill")
+                    Label("Record a Meeting Now", systemImage: "record.circle.fill")
                 }
             }
         }
     }
 
+    private var isRecording: Bool {
+        if case .recording = state.status { return true }
+        return false
+    }
+
     private var statusSymbol: String {
         switch state.status {
-        case .idle: return "moon.zzz"
-        case .recording: return "record.circle"
+        case .idle: return "waveform"
+        case .recording: return "record.circle.fill"
         case .processing: return "gearshape.2"
         }
     }

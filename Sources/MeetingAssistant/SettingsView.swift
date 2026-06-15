@@ -17,29 +17,40 @@ struct SettingsView: View {
     // MARK: - Permissions
 
     private var permissionsTab: some View {
-        let p = state.permissions
-        return Form {
-            permissionRow("Screen & System Audio", p.screenRecording) { p.requestScreenRecording() }
-            permissionRow("Microphone", p.microphone) { Task { await p.requestMicrophone() } }
-            permissionRow("Calendar", p.calendar) { Task { await p.requestCalendar(); state.refreshUpcoming() } }
-            permissionRow("Accessibility", p.accessibility) { p.requestAccessibility() }
-            permissionRow("Notifications", p.notifications) { Task { await p.requestNotifications() } }
+        // Drive these rows from the same SetupCapability source as onboarding so the
+        // names match exactly across both screens.
+        Form {
+            ForEach(SetupCapability.allCases, id: \.self) { permissionRow($0) }
 
-            Text("Unsigned/development builds may require adding the app manually under System Settings → Privacy & Security.")
+            Text("If a switch won't turn on, open System Settings → Privacy & Security and enable Meeting Assistant there.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
     }
 
-    private func permissionRow(_ name: String, _ stateValue: PermissionState, action: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: stateValue.symbol)
-                .foregroundStyle(stateValue == .granted ? .green : (stateValue == .denied ? .red : .secondary))
-            Text(name)
-            Spacer()
-            if stateValue != .granted {
-                Button("Grant", action: action)
+    private func permissionRow(_ capability: SetupCapability) -> some View {
+        let status = state.setup.status(capability)
+        return HStack {
+            Image(systemName: symbol(for: status))
+                .foregroundStyle(status == .granted ? .green : (status == .denied ? .red : .secondary))
+            Text(capability.title)
+            if !capability.isRequired {
+                Text("Optional").font(.caption2).foregroundStyle(.secondary)
             }
+            Spacer()
+            if status != .granted {
+                Button(capability.requiresSystemSettings ? "Open System Settings" : "Grant") {
+                    Task { await state.grant(capability) }
+                }
+            }
+        }
+    }
+
+    private func symbol(for status: SetupPermissionStatus) -> String {
+        switch status {
+        case .granted: return "checkmark.circle.fill"
+        case .denied: return "xmark.circle.fill"
+        case .notDetermined: return "questionmark.circle"
         }
     }
 
@@ -47,45 +58,46 @@ struct SettingsView: View {
 
     private var modelsTab: some View {
         Form {
-            Picker("Transcription model", selection: Binding(
-                get: { state.settings.transcriptionModel },
-                set: { state.settings.transcriptionModel = $0 }
-            )) {
-                ForEach(TranscriptionModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            .onChange(of: state.settings.transcriptionModel) {
-                // Changing the model triggers a fresh download/load.
-                Task { await state.prepareModel() }
-            }
-
-            LabeledContent("Model status") {
+            // The everyday view: just whether transcription is ready. No model
+            // jargon or tuning knobs — sensible defaults are chosen for the user.
+            LabeledContent("Transcription") {
                 if state.modelPreparing {
-                    Text(state.modelStatusText ?? "Preparing…")
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(state.modelStatusText ?? "Preparing…")
+                    }
                 } else if state.modelReady {
                     Label("Ready", systemImage: "checkmark.seal").foregroundStyle(.green)
+                } else if state.modelFailed {
+                    Button("Retry download") { Task { await state.prepareModel() } }
                 } else {
-                    Button("Download / retry") { Task { await state.prepareModel() } }
+                    Button("Download") { Task { await state.prepareModel() } }
                 }
             }
 
-            Stepper(
-                "Transcription workers: \(state.settings.transcriptionWorkers)",
-                value: Binding(
-                    get: { state.settings.transcriptionWorkers },
-                    set: { state.settings.transcriptionWorkers = $0 }
-                ),
-                in: AppSettings.workerRange
-            )
-            .onChange(of: state.settings.transcriptionWorkers) {
-                Task { await state.applyWorkerSetting() }
+            if state.modelFailed, let status = state.modelStatusText {
+                Text(status).font(.caption).foregroundStyle(.orange)
             }
-            Text("How many audio chunks are transcribed in parallel. 4 is a good "
-                 + "default for an M1 Pro; higher uses more GPU/RAM with diminishing "
-                 + "returns, lower is gentler during other work.")
+
+            Text("Transcription runs 100% on your Mac. Audio never leaves this computer.")
                 .font(.caption).foregroundStyle(.secondary)
 
-            Text("Transcription runs 100% on-device. Audio never leaves your Mac.")
-                .font(.caption).foregroundStyle(.secondary)
+            // Power-user options, collapsed by default so they don't add noise.
+            DisclosureGroup("Advanced") {
+                Picker("Quality", selection: Binding(
+                    get: { state.settings.transcriptionModel },
+                    set: { state.settings.transcriptionModel = $0 }
+                )) {
+                    ForEach(TranscriptionModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .onChange(of: state.settings.transcriptionModel) {
+                    // Switching quality downloads a different model.
+                    Task { await state.prepareModel() }
+                }
+                Text("Higher quality is more accurate but downloads a larger model "
+                     + "(up to ~1.6 GB) and transcribes a little slower.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding()
     }

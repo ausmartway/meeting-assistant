@@ -8,27 +8,12 @@ struct MainWindowView: View {
     @State private var selection: String?
 
     var body: some View {
-        NavigationSplitView {
-            List(state.recordings, id: \.meeting.id, selection: $selection) { recording in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(recording.meeting.title).font(.body)
-                    Text(recording.recordedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(recording.meeting.id)
-            }
-            .navigationTitle("Meetings")
-            .frame(minWidth: 220)
-        } detail: {
-            if let id = selection,
-               let recording = state.recordings.first(where: { $0.meeting.id == id }) {
-                MeetingDetailView(recording: recording)
+        Group {
+            if !state.setup.isComplete {
+                // First-run: walk the user through permissions before anything else.
+                OnboardingView()
             } else {
-                ContentUnavailableViewCompat(
-                    title: "No meeting selected",
-                    systemImage: "doc.text.magnifyingglass",
-                    description: "Pick a meeting to see its transcript."
-                )
+                meetingsSplitView
             }
         }
         .overlay(alignment: .top) {
@@ -50,11 +35,82 @@ struct MainWindowView: View {
         }
         .overlay(alignment: .bottom) {
             if let error = state.lastError {
-                Text(error)
-                    .font(.caption).foregroundStyle(.white)
-                    .padding(8).background(.red, in: Capsule()).padding()
+                HStack(alignment: .top, spacing: 10) {
+                    Text(error)
+                        .font(.callout).foregroundStyle(.white)
+                        .multilineTextAlignment(.leading)
+                    Button {
+                        state.dismissError()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(12).background(.red, in: RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: 440)
+                .padding()
+                // Auto-dismiss so a stale banner doesn't linger if the user moves on.
+                .task(id: error) {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    state.dismissError()
+                }
             }
         }
+    }
+
+    /// The transcripts browser, shown once setup is complete.
+    private var meetingsSplitView: some View {
+        NavigationSplitView {
+            List(state.recordings, id: \.meeting.id, selection: $selection) { recording in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recording.meeting.title).font(.body)
+                    Text(recording.recordedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .tag(recording.meeting.id)
+            }
+            .navigationTitle("Meetings")
+            .frame(minWidth: 220)
+        } detail: {
+            if state.recordings.isEmpty {
+                firstMeetingPrompt
+            } else if let id = selection,
+                      let recording = state.recordings.first(where: { $0.meeting.id == id }) {
+                MeetingDetailView(recording: recording)
+            } else {
+                ContentUnavailableViewCompat(
+                    title: "No meeting selected",
+                    systemImage: "doc.text.magnifyingglass",
+                    description: "Pick a meeting from the list to see its transcript."
+                )
+            }
+        }
+    }
+
+    /// Shown when there are no recordings yet — a real empty state with a clear
+    /// call to action rather than a "pick a meeting" prompt with nothing to pick.
+    private var firstMeetingPrompt: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.largeTitle).foregroundStyle(.secondary)
+            Text("No meetings yet").font(.headline)
+            Text("Your transcripts will appear here. The app records calendar meetings automatically — or start one now.")
+                .font(.callout).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            Button {
+                Task { await state.startAdHocCapture() }
+            } label: {
+                Label("Record a Meeting Now", systemImage: "record.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!state.modelReady)
+            if !state.modelReady {
+                Text("Preparing the transcription model…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -72,15 +128,19 @@ private struct MeetingDetailView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    Task { await state.reprocess(recording) }
-                } label: {
-                    Label("Re-transcribe", systemImage: "arrow.clockwise")
+                VStack(alignment: .trailing, spacing: 2) {
+                    Button {
+                        Task { await state.reprocess(recording) }
+                    } label: {
+                        Label("Make Transcript Again", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!state.modelReady)
+                    .help("Re-create the transcript from the saved audio")
+                    if !state.modelReady {
+                        Text("Waiting for the model to finish downloading…")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(!state.modelReady)
-                .help(state.modelReady
-                      ? "Re-run transcription from the saved audio"
-                      : "Waiting for the transcription model to finish downloading")
             }
             .padding()
 

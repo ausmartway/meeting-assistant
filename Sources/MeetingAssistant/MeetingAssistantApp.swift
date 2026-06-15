@@ -12,7 +12,8 @@ struct MeetingAssistantApp: App {
             MenuBarView()
                 .environmentObject(state)
         } label: {
-            Image(systemName: menuBarSymbol)
+            MenuBarLabel()
+                .environmentObject(state)
         }
         .menuBarExtraStyle(.window)
 
@@ -32,12 +33,21 @@ struct MeetingAssistantApp: App {
                 .environmentObject(state)
         }
     }
+}
 
-    private var menuBarSymbol: String {
-        switch state.status {
-        case .idle: return "waveform"
-        case .recording: return "record.circle"
-        case .processing: return "gearshape.2"
-        }
+/// The menu-bar icon. Lives in its own view so it can observe `AppState` (the
+/// icon changes with status) and open the main window once at first launch —
+/// otherwise a brand-new user, faced with a menu-bar-only app, sees nothing.
+private struct MenuBarLabel: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(systemName: state.menuBarSymbol)
+            .onAppear {
+                guard !state.hasAutoOpenedWindow else { return }
+                state.hasAutoOpenedWindow = true
+                openWindow(id: "main")
+            }
     }
 }
