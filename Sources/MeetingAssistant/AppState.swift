@@ -207,6 +207,20 @@ final class AppState: ObservableObject {
         NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
     }
 
+    /// Quit and reopen the app. Some permissions — notably Screen & Audio
+    /// Recording — only take effect on a fresh launch, so onboarding offers this.
+    /// Spawns a tiny detached shell that waits for this instance to exit, then
+    /// relaunches the bundle. (The app is intentionally non-sandboxed, so this is
+    /// allowed.)
+    func relaunch() {
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; open \"\(path)\""]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
     // MARK: - Capture control
 
     /// Auto-start path: notify the user that recording began, then start.

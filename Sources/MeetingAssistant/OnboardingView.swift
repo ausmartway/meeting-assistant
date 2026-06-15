@@ -29,6 +29,20 @@ struct OnboardingView: View {
                           systemImage: "lock.fill")
                 }
                 .font(.caption).foregroundStyle(.secondary)
+
+                Divider()
+
+                // Screen & Audio Recording (and sometimes Window Detection) only
+                // take effect after a relaunch — give the user a one-click way to do
+                // it instead of telling them to quit and reopen manually.
+                HStack(spacing: 12) {
+                    Text("Turned on a permission that's still not taking effect? Some need a restart.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Restart App") { state.relaunch() }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                }
             }
             .padding(28)
             .frame(maxWidth: 560)
