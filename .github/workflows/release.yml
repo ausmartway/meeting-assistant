@@ -17,16 +17,20 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14    # Apple Silicon runner with full Xcode (WhisperKit needs
-                         # the Metal/CoreML compiler, which Command Line Tools lack)
+    # macos-15 ships Xcode 16 (macOS 15 SDK). WhisperKit needs it: it references
+    # CoreML's MLState (macOS 15 SDK) and Swift 6's @retroactive, which the older
+    # Xcode on macos-14 lacks. Deployment target stays macOS 14 — building against
+    # a newer SDK is fine.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select full Xcode and show toolchain
+      - name: Select newest Xcode and show toolchain
         run: |
-          # The runner's default Xcode is the full toolchain (not CLT); make it
-          # explicit so the WhisperKit Metal/CoreML build succeeds.
-          sudo xcode-select -s /Applications/Xcode.app
+          # Pick the highest installed Xcode (full toolchain, not Command Line
+          # Tools) so the WhisperKit Metal/CoreML build succeeds.
+          XCODE="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}"
           xcodebuild -version
           swift --version
 
