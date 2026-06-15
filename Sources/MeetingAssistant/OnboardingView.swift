@@ -22,8 +22,13 @@ struct OnboardingView: View {
                 .padding(.vertical, 4)
                 .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
 
-                Text("Everything runs on your Mac. Your audio and transcripts never leave this computer.")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Auto-recording works when you join from the Zoom, Teams, or Google Meet app.",
+                          systemImage: "info.circle")
+                    Label("Everything runs on your Mac. Your audio and transcripts never leave this computer.",
+                          systemImage: "lock.fill")
+                }
+                .font(.caption).foregroundStyle(.secondary)
             }
             .padding(28)
             .frame(maxWidth: 560)

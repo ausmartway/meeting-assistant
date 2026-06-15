@@ -70,8 +70,23 @@ public final class MeetingStore {
 
     /// Load the transcript markdown for a meeting, if present.
     public func transcript(for meetingID: String) -> String? {
-        let file = root.appendingPathComponent(sanitize(meetingID)).appendingPathComponent("transcript.md")
+        let file = transcriptURL(for: meetingID)
         return try? String(contentsOf: file, encoding: .utf8)
+    }
+
+    /// On-disk location of a meeting's transcript file (may not exist yet). Used
+    /// to reveal the transcript in Finder.
+    public func transcriptURL(for meetingID: String) -> URL {
+        root.appendingPathComponent(sanitize(meetingID)).appendingPathComponent("transcript.md")
+    }
+
+    /// Delete a meeting's entire bundle — audio, metadata, and transcript — from
+    /// disk, so recordings don't accumulate forever in a folder the user can't see.
+    public func delete(meetingID: String) throws {
+        let dir = root.appendingPathComponent(sanitize(meetingID), isDirectory: true)
+        if fileManager.fileExists(atPath: dir.path) {
+            try fileManager.removeItem(at: dir)
+        }
     }
 
     /// Keep meeting ids filesystem-safe (EKEvent identifiers can contain slashes).

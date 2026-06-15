@@ -282,6 +282,27 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// On-disk transcript file, for "Reveal in Finder".
+    func transcriptURL(for recording: MeetingRecording) -> URL {
+        store.transcriptURL(for: recording.meeting.id)
+    }
+
+    /// The meeting currently being recorded or processed, if any.
+    private var activeMeetingID: String? {
+        switch status {
+        case .recording(let m), .processing(let m): return m.id
+        case .idle: return nil
+        }
+    }
+
+    /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete
+    /// the meeting that's currently recording or processing.
+    func deleteRecording(_ recording: MeetingRecording) {
+        guard activeMeetingID != recording.meeting.id else { return }
+        try? store.delete(meetingID: recording.meeting.id)
+        recordings = store.allRecordings()
+    }
+
     /// Clear the current error banner (user tapped it, or it auto-dismissed).
     func dismissError() { lastError = nil }
 

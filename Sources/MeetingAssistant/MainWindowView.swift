@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import MeetingKit
 
 /// Main window: a sidebar list of past meetings and a detail pane showing the
@@ -6,6 +7,7 @@ import MeetingKit
 struct MainWindowView: View {
     @EnvironmentObject private var state: AppState
     @State private var selection: String?
+    @State private var pendingDelete: MeetingRecording?
 
     var body: some View {
         Group {
@@ -68,9 +70,29 @@ struct MainWindowView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .tag(recording.meeting.id)
+                .contextMenu {
+                    Button("Delete Meeting", role: .destructive) { pendingDelete = recording }
+                }
             }
             .navigationTitle("Meetings")
             .frame(minWidth: 220)
+            .confirmationDialog(
+                "Delete this meeting?",
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                presenting: pendingDelete
+            ) { recording in
+                Button("Delete", role: .destructive) {
+                    if selection == recording.meeting.id { selection = nil }
+                    state.deleteRecording(recording)
+                    pendingDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: { _ in
+                Text("This permanently deletes the recording and its transcript. This can't be undone.")
+            }
         } detail: {
             if state.recordings.isEmpty {
                 firstMeetingPrompt
@@ -94,10 +116,10 @@ struct MainWindowView: View {
             Image(systemName: "calendar.badge.clock")
                 .font(.largeTitle).foregroundStyle(.secondary)
             Text("No meetings yet").font(.headline)
-            Text("Your transcripts will appear here. The app records calendar meetings automatically — or start one now.")
+            Text("Your transcripts will appear here. Calendar meetings record automatically when you join from the Zoom, Teams, or Meet app — or start one now.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+                .frame(maxWidth: 380)
             Button {
                 Task { await state.startAdHocCapture() }
             } label: {
@@ -118,6 +140,7 @@ struct MainWindowView: View {
 private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
+    @State private var didCopy = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -128,17 +151,53 @@ private struct MeetingDetailView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
+                HStack(alignment: .top, spacing: 8) {
+                    let transcript = state.transcript(for: recording)
+
                     Button {
-                        Task { await state.reprocess(recording) }
+                        copyToClipboard(transcript ?? "")
+                        didCopy = true
                     } label: {
-                        Label("Make Transcript Again", systemImage: "arrow.clockwise")
+                        Label(didCopy ? "Copied" : "Copy",
+                              systemImage: didCopy ? "checkmark" : "doc.on.doc")
                     }
-                    .disabled(!state.modelReady)
-                    .help("Re-create the transcript from the saved audio")
-                    if !state.modelReady {
-                        Text("Waiting for the model to finish downloading…")
-                            .font(.caption2).foregroundStyle(.secondary)
+                    .disabled(transcript == nil)
+                    .help("Copy the transcript to the clipboard")
+                    // Briefly confirm the copy, then revert the label.
+                    .task(id: didCopy) {
+                        guard didCopy else { return }
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        didCopy = false
+                    }
+
+                    Menu {
+                        Button("Save to File…") {
+                            saveToFile(transcript ?? "", suggestedName: recording.meeting.title)
+                        }
+                        Button("Show in Finder") {
+                            let url = state.transcriptURL(for: recording)
+                            NSWorkspace.shared.selectFile(
+                                url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+                        }
+                    } label: {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(transcript == nil)
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Button {
+                            Task { await state.reprocess(recording) }
+                        } label: {
+                            Label("Make Transcript Again", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(!state.modelReady)
+                        .help("Re-create the transcript from the saved audio")
+                        if !state.modelReady {
+                            Text("Waiting for the model to finish downloading…")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -165,6 +224,20 @@ private struct MeetingDetailView: View {
 
             ScrollView { MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._") }
         }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Save the transcript as a Markdown file the user chooses.
+    private func saveToFile(_ text: String, suggestedName: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(suggestedName).md"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 }
 

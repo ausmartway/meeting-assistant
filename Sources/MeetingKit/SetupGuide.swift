@@ -61,9 +61,15 @@ public enum SetupCapability: String, CaseIterable, Sendable {
     /// Guidance shown while the capability is still off — tells the user where the
     /// switch actually lives when it isn't a simple in-app prompt.
     public var grantHint: String? {
-        requiresSystemSettings
-            ? "Click, then enable Meeting Assistant in System Settings and return here."
-            : nil
+        switch self {
+        case .screenRecording:
+            // macOS usually requires a relaunch before this takes effect.
+            return "Click, then enable Meeting Assistant in System Settings. You may need to quit and reopen the app afterward."
+        case .accessibility:
+            return "Click, then enable Meeting Assistant in System Settings and return here."
+        case .microphone, .calendar, .notifications:
+            return nil
+        }
     }
 }
 

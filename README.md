@@ -7,6 +7,27 @@ meetings (Zoom, Google Meet, Microsoft Teams) when they start, and produces a
 Target hardware: MacBook Pro M1 Pro, macOS 14 (Sonoma)+. Runs comfortably on
 16 GB.
 
+## Install
+
+1. Download `MeetingAssistant.dmg` and double-click it.
+2. Drag **Meeting Assistant** onto the **Applications** folder in the window.
+3. Open **Applications**, then **right-click Meeting Assistant → Open** (do this
+   the first time only). Because the app is self-distributed and not signed by a
+   paid Apple Developer account, a normal double-click shows "unidentified
+   developer" — right-click → Open lets you run it anyway. Click **Open** in the
+   dialog that appears.
+4. The app lives in your **menu bar** (top-right of the screen), not the Dock. On
+   first launch it opens a setup window that walks you through turning on the
+   permissions it needs. Follow the checklist until everything shows a green
+   check, then you're ready.
+
+> **Tip:** After you turn on **Screen & Audio Recording** in System Settings, you
+> may need to quit and reopen Meeting Assistant for it to take effect.
+
+That's it — when a calendar meeting starts and you join from the Zoom, Teams, or
+Google Meet app, recording begins automatically. You can also click **Record a
+Meeting Now** from the menu-bar icon anytime.
+
 ## Design principle: cheap live capture, heavy post-processing
 
 To stay responsive **during** a call, the app does almost nothing expensive while
@@ -54,7 +75,9 @@ Key components (all in `Sources/MeetingKit`):
 `SpeakerSampler`, `Transcriber`, `SpeakerFuser`, `HallucinationFilter`,
 `WhisperTextCleaner`, `TranscriptFormatter`, `MeetingProcessor`, `MeetingStore`.
 
-## Build & run
+## Build from source (developers)
+
+End users should follow [Install](#install) above. To build it yourself:
 
 ```sh
 swift test               # run the unit tests (needs full Xcode toolchain active)
@@ -62,9 +85,10 @@ swift test               # run the unit tests (needs full Xcode toolchain active
 ./Scripts/make-dmg.sh        # package a drag-to-install DMG
 ```
 
-On first launch, open **Settings → Permissions** and grant Screen & System Audio
-Recording, Microphone, Calendar, Accessibility, and Notifications. The build is
-ad-hoc signed, so first launch needs a right-click → **Open** to clear Gatekeeper.
+On first launch the app opens a **setup window** that guides you through granting
+Screen & System Audio Recording, Microphone, Calendar, Accessibility, and
+Notifications — no need to dig through Settings. The build is ad-hoc signed, so the
+first launch needs a right-click → **Open** to clear Gatekeeper.
 
 ## On-device transcription
 
