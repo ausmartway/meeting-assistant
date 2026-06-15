@@ -108,10 +108,14 @@ build with that one constant identity, so you **grant the permissions once and
 they persist across all future local builds**. Run it once, then use
 `install.sh`/`make-dmg.sh` as normal.
 
+The released DMGs (built by GitHub Actions) are signed with this **same**
+certificate — the p12 is stored in the repo's Actions secrets — so locally-built
+and downloaded builds share one identity and permission grants carry across both.
+
 > The certificate is self-signed (not Apple-notarized), so the first launch of
 > each install still needs **System Settings → Privacy & Security → Open Anyway**
-> (macOS 15/26) or **right-click → Open** (macOS 14). A fully clean-opening,
-> always-persistent build requires an Apple Developer ID + notarization.
+> (macOS 15/26) or **right-click → Open** (macOS 14). A fully clean-opening build
+> with no first-launch step requires an Apple Developer ID + notarization.
 
 ## On-device transcription
 

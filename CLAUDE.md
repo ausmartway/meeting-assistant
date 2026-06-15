@@ -121,9 +121,11 @@ therefore prefers a **stable self-signed certificate**: run
 `~/.config/meeting-assistant/`, both outside the repo) and `build-app.sh` signs by
 that identity's hash with `--keychain`, giving a constant designated requirement
 (`certificate root = H"…"`) so grants persist across local builds. With no cert
-set up, it falls back to ad-hoc. **CI release builds remain ad-hoc** (no key is
-stored in the repo), so for persistent permissions install via
-`Scripts/install.sh` locally rather than the CI DMG.
+set up, it falls back to ad-hoc. **CI release builds use the same certificate**:
+the p12 + password live in the GitHub Actions secrets `CODESIGN_P12_BASE64` /
+`CODESIGN_P12_PASSWORD`, imported into a throwaway keychain by the release
+workflow, so locally-built and CI-built apps share one identity and TCC grants
+carry across both. (Still not Apple-notarized — first launch needs Open Anyway.)
 
 ## TCC permissions
 

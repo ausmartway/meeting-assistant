@@ -42,19 +42,48 @@ jobs:
       - name: Run unit tests
         run: swift test
 
+      - name: Import code-signing certificate
+        # Import the stable self-signed cert (shared with local builds) into a
+        # throwaway keychain so the DMG is signed with the SAME identity every
+        # time — which is what lets macOS keep TCC permission grants across
+        # updates. Falls back to ad-hoc if the secret isn't configured.
+        env:
+          CODESIGN_P12_BASE64: ${{ secrets.CODESIGN_P12_BASE64 }}
+          CODESIGN_P12_PASSWORD: ${{ secrets.CODESIGN_P12_PASSWORD }}
+        run: |
+          if [ -z "$CODESIGN_P12_BASE64" ]; then
+            echo "No signing cert configured — build will be ad-hoc signed."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/codesign.keychain-db"
+          KCPASS="$(openssl rand -hex 24)"
+          echo "$CODESIGN_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KCPASS" "$KEYCHAIN"
+          security set-keychain-settings "$KEYCHAIN"
+          security unlock-keychain -p "$KCPASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CODESIGN_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KCPASS" "$KEYCHAIN" >/dev/null
+          # Add to the search list so codesign can resolve the identity.
+          security list-keychains -d user -s \
+            $(security list-keychains -d user | tr -d '"' | xargs) "$KEYCHAIN"
+          HASH="$(security find-identity -p codesigning "$KEYCHAIN" \
+                    | awk '/Meeting Assistant Self-Signed/ {print $2; exit}')"
+          echo "CODESIGN_IDENTITY=$HASH" >> "$GITHUB_ENV"
+          echo "CODESIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "Imported signing identity $HASH"
+
       - name: Build DMG
+        # build-app.sh picks up CODESIGN_IDENTITY/CODESIGN_KEYCHAIN from the env.
         run: |
           chmod +x Scripts/*.sh
           ./Scripts/make-dmg.sh
 
-      # --- Signing & notarization (add when you have a Developer ID) ----------
-      # - name: Sign & notarize
-      #   run: |
-      #     codesign --force --options runtime --timestamp \
-      #       --sign "Developer ID Application: Your Name (TEAMID)" \
-      #       --entitlements Resources/MeetingAssistant.entitlements \
-      #       "build/Meeting Assistant.app"
-      #     # Rebuild the DMG from the signed app, then:
+      # --- Notarization (add when you have an Apple Developer ID) --------------
+      # Self-signed builds are not notarized, so first launch still needs
+      # System Settings → Privacy & Security → Open Anyway. With a Developer ID:
       #     xcrun notarytool submit build/MeetingAssistant.dmg \
       #       --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
       #       --password "$APP_SPECIFIC_PASSWORD" --wait

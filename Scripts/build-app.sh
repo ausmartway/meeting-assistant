@@ -34,15 +34,19 @@ cp "${BIN_PATH}/${EXE_NAME}" "${MACOS_DIR}/${EXE_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
 
 # Choose the signing identity. Preference order:
-#   1. our stable self-signed cert in the dedicated keychain, if set up (so TCC
+#   1. $CODESIGN_IDENTITY override (used by CI, with optional $CODESIGN_KEYCHAIN)
+#   2. our stable self-signed cert in the dedicated keychain, if set up (so TCC
 #      permission grants persist across rebuilds — run ./Scripts/setup-signing.sh)
-#   2. ad-hoc (works, but Screen Recording / Accessibility grants reset each build)
+#   3. ad-hoc (works, but Screen Recording / Accessibility grants reset each build)
 SIGN_KEYCHAIN="$HOME/Library/Keychains/meeting-assistant-signing.keychain-db"
 SIGN_PW_FILE="$HOME/.config/meeting-assistant/signing-keychain-password"
 IDENTITY="-"        # ad-hoc fallback
 KEYCHAIN_ARGS=()
 
-if [[ -f "$SIGN_KEYCHAIN" && -f "$SIGN_PW_FILE" ]]; then
+if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+  IDENTITY="$CODESIGN_IDENTITY"
+  [[ -n "${CODESIGN_KEYCHAIN:-}" ]] && KEYCHAIN_ARGS=(--keychain "$CODESIGN_KEYCHAIN")
+elif [[ -f "$SIGN_KEYCHAIN" && -f "$SIGN_PW_FILE" ]]; then
   security unlock-keychain -p "$(cat "$SIGN_PW_FILE")" "$SIGN_KEYCHAIN" 2>/dev/null || true
   # Resolve the cert's SHA-1 hash; signing by hash works even though a self-signed
   # cert is "untrusted" (and thus hidden from the default identity search).
