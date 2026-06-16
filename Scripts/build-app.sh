@@ -33,6 +33,14 @@ mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "${BIN_PATH}/${EXE_NAME}" "${MACOS_DIR}/${EXE_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
 
+# App icon (referenced by CFBundleIconFile = AppIcon). Build it on demand if the
+# .icns is missing so a fresh checkout still gets an icon.
+if [[ ! -f Resources/AppIcon.icns ]]; then
+  echo "▸ Generating app icon…"
+  ./Scripts/make-icns.sh
+fi
+cp Resources/AppIcon.icns "${RES_DIR}/AppIcon.icns"
+
 # Choose the signing identity. Preference order:
 #   1. $CODESIGN_IDENTITY override (used by CI, with optional $CODESIGN_KEYCHAIN)
 #   2. our stable self-signed cert in the dedicated keychain, if set up (so TCC

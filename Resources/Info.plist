@@ -18,6 +18,10 @@
     <string>4</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
 
     <!-- Launches with a Dock icon by default; the "Show icon in the Dock" setting
          can hide it at runtime via NSApp.setActivationPolicy(.accessory). -->
