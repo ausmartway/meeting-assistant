@@ -7,10 +7,19 @@ import Foundation
 public final class MeetingProcessor {
     private let store: MeetingStore
     private let transcriber: Transcribing
+    private let diarizer: Diarizing
+    private let enrollment: MeEnrollment?
 
-    public init(store: MeetingStore, transcriber: Transcribing) {
+    public init(
+        store: MeetingStore,
+        transcriber: Transcribing,
+        diarizer: Diarizing = StubDiarizer(),
+        enrollment: MeEnrollment? = nil
+    ) {
         self.store = store
         self.transcriber = transcriber
+        self.diarizer = diarizer
+        self.enrollment = enrollment
     }
 
     /// Progress callback for the UI: `fraction` is 0...1 during model download
@@ -37,9 +46,26 @@ public final class MeetingProcessor {
         let allSegments = try await (micSegments + systemSegments)
             .sorted { $0.start < $1.start }
 
-        // 2. Drop whisper silence artifacts, then fuse speaker labels.
+        // 2. Drop whisper silence artifacts.
         let cleaned = HallucinationFilter.clean(allSegments)
-        let labeled = SpeakerFuser.fuse(segments: cleaned, timeline: recording.timeline)
+
+        // 2b. Diarize the mic channel so multiple in-room speakers are separated.
+        //     Best-effort: any failure degrades to blanket "Me" (empty spans).
+        var micSpans: [DiarizedSpan] = []
+        do {
+            micSpans = try await diarizer.diarize(
+                audioFile: micURL, enrollment: enrollment, progress: onProgress
+            )
+        } catch {
+            micSpans = []   // non-fatal — keep today's "Me" labeling
+        }
+
+        // 2c. Fuse speaker labels (mic via diarization, system via the timeline).
+        let labeled = SpeakerFuser.fuse(
+            segments: cleaned,
+            timeline: recording.timeline,
+            micDiarization: micSpans
+        )
 
         // 3. Render with real wall-clock timestamps (baseDate = recording start) and
         //    a note recording how long transcription took.
