@@ -26,12 +26,24 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showDockIcon, forKey: Keys.showDockIcon) }
     }
 
+    /// Whether to run on-device diarization to attach names to in-room speakers
+    /// (people sharing the local mic). Off by default — it adds a post-processing
+    /// pass and only helps when several people are in the room together.
+    @Published var identifyInRoomSpeakers: Bool {
+        didSet { defaults.set(identifyInRoomSpeakers, forKey: Keys.identifyInRoomSpeakers) }
+    }
+
     private let defaults: UserDefaults
+
+    /// The on-disk library of known speakers (voiceprints + names), shared across
+    /// meetings so a person renamed once is recognized in future recordings.
+    let speakerLibrary: SpeakerLibrary
 
     enum Keys {
         static let transcriptionModel = "transcriptionModel"
         static let transcriptionWorkers = "transcriptionWorkers"
         static let showDockIcon = "showDockIcon"
+        static let identifyInRoomSpeakers = "identifyInRoomSpeakers"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -45,10 +57,23 @@ final class AppSettings: ObservableObject {
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) == nil
             ? true
             : defaults.bool(forKey: Keys.showDockIcon)
+        self.identifyInRoomSpeakers = defaults.bool(forKey: Keys.identifyInRoomSpeakers)
+
+        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) ?? FileManager.default.temporaryDirectory
+        self.speakerLibrary = SpeakerLibrary(url: base.appendingPathComponent("MeetingAssistant/speakers.json"))
     }
 
     /// Build the on-device transcriber (real WhisperKit when compiled in).
     func makeTranscriber() -> Transcribing {
         Backends.makeTranscriber(model: transcriptionModel, workers: transcriptionWorkers)
     }
+
+    /// Build the on-device diarizer (real FluidAudio when compiled in).
+    func makeDiarizer() -> Diarizing {
+        Backends.makeDiarizer()
+    }
+
+    /// Whether the local user has enrolled their own voice (so their mic segments
+    /// can be labeled "Me" by the diarizer).
+    var isEnrolled: Bool { speakerLibrary.me != nil }
 }

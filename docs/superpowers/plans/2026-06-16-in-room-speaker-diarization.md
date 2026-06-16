@@ -1097,3 +1097,285 @@ Turn the setting **off**, process a normal solo remote meeting. Expected: behavi
 - **Known external-API risk (Task 7):** FluidAudio's exact symbol names (`OfflineDiarizerManager.process`, result `segments` fields, `enrollSpeaker`) are taken from its published API doc and may need adjustment against the compiled package — flagged inline, contained to one file, verified by building/running (consistent with how WhisperKit is treated).
 - **Task 5 store API:** the test's `MeetingStore` construction is flagged to be matched against the real initializer in `MeetingStoreTests.swift` before running.
 ```
+
+---
+
+# REVISION (2026-06-16): local speaker library
+
+Per the spec's "Extension: local speaker library", the feature grows from
+"match the enrolled user" to a cross-meeting speaker library with naming +
+recognition. **Tasks 1–6 stay as built.** The tasks below SUPERSEDE original
+Tasks 7–11. New task ids are prefixed `R`.
+
+Key shape changes vs. the original:
+- `Diarizing.diarize` returns `DiarizationOutcome { spans, embeddings }` (was `[DiarizedSpan]`).
+- Matching moves out of `FluidAudioDiarizer` into pure `SpeakerRecognizer`.
+- `MeetingProcessor` resolves cluster→label via the library, fuses with that map, and persists a per-meeting speaker map for later renaming.
+- `SpeakerFuser` takes a resolved `clusterID → label` map instead of computing labels itself.
+
+## Task R1: DiarizationOutcome — diarizer returns voiceprints
+
+**Files:** Modify `Sources/MeetingKit/Diarizer.swift`; Test `Tests/MeetingKitTests/DiarizerStubTests.swift`.
+
+- [ ] **Step 1 — change the protocol & stub.** In `Diarizer.swift` add:
+```swift
+/// The result of diarizing one audio file: per-speaker time spans plus the
+/// centroid voiceprint of each cluster (for matching against the speaker library).
+public struct DiarizationOutcome: Sendable, Equatable {
+    public let spans: [DiarizedSpan]            // speakerID = raw cluster id
+    public let embeddings: [String: [Float]]    // cluster id → centroid voiceprint
+    public init(spans: [DiarizedSpan], embeddings: [String: [Float]]) {
+        self.spans = spans
+        self.embeddings = embeddings
+    }
+}
+```
+Change the protocol method to `func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws -> DiarizationOutcome` (drop the `enrollment:` param — matching is no longer the engine's job). Update `StubDiarizer.diarize` to return `DiarizationOutcome(spans: [], embeddings: [:])`.
+
+- [ ] **Step 2 — update FluidAudioDiarizer** (`#if canImport(FluidAudio)` section): delete `matchEnrolledSpeaker`, `dominantSpeakerEmbedding`, the `meMatchThreshold`/`enrollment` handling, and the `meSpeakerID` relabel. `diarize` becomes: run `mgr.process(audioFile)`, then
+```swift
+let spans = result.segments.map {
+    DiarizedSpan(start: TimeInterval($0.startTimeSeconds),
+                 end: TimeInterval($0.endTimeSeconds),
+                 speakerID: $0.speakerId)
+}
+return DiarizationOutcome(spans: spans, embeddings: result.speakerDatabase ?? [:])
+```
+Keep the actor + load-task memoization. NOTE: keep a private static helper that extracts the dominant embedding from a `DiarizationResult` — it will be reused by enrollment in Task R6 (`public func enrollmentEmbedding(audioFile:) async throws -> [Float]?` on the diarizer is added in R6; for now just don't delete the dominant-embedding helper logic, move it where R6 can use it, or re-add in R6).
+
+- [ ] **Step 3 — update the stub test** in `DiarizerStubTests.swift`: the `stubReturnsEmpty` test now checks `outcome.spans.isEmpty && outcome.embeddings.isEmpty`, and the `makeDiarizer` test still must NOT call `diarize` (avoids real model download). Update the call signature (no `enrollment:`).
+
+- [ ] **Step 4 — update callers.** `MeetingProcessor` (Task R5) and `SpeakerFuser` (Task R4) are updated in their own tasks; for THIS task just make `MeetingProcessor` compile by adapting its `diarize(...)` call to the new signature and using `.spans` (full rework in R5). Run `swift build` then `swift test`; fix compile errors. The `MeetingProcessorDiarizationTests` stubs (`TwoSpeakerDiarizer`, `FailingDiarizer`) must be updated to the new return type.
+
+- [ ] **Step 5 — commit:** `git commit -am "refactor: diarizer returns DiarizationOutcome with voiceprints"` (no Claude mention).
+
+## Task R2: VoiceMatch.cosineDistance (pure)
+
+**Files:** Create `Sources/MeetingKit/VoiceMatch.swift`; Test `Tests/MeetingKitTests/VoiceMatchTests.swift`.
+
+- [ ] **Step 1 — failing test:**
+```swift
+import Testing
+@testable import MeetingKit
+
+@Suite("VoiceMatch")
+struct VoiceMatchTests {
+    @Test("identical vectors have distance 0")
+    func identical() {
+        #expect(VoiceMatch.cosineDistance([1, 0, 1], [1, 0, 1]) == 0)
+    }
+    @Test("orthogonal vectors have distance 1")
+    func orthogonal() {
+        #expect(abs(VoiceMatch.cosineDistance([1, 0], [0, 1]) - 1) < 1e-6)
+    }
+    @Test("closer vectors have smaller distance than farther ones")
+    func ordering() {
+        let near = VoiceMatch.cosineDistance([1, 1, 0], [1, 0.9, 0])
+        let far  = VoiceMatch.cosineDistance([1, 1, 0], [0, 0, 1])
+        #expect(near < far)
+    }
+    @Test("empty or zero-magnitude vectors return infinity (no match)")
+    func degenerate() {
+        #expect(VoiceMatch.cosineDistance([], []) == .infinity)
+        #expect(VoiceMatch.cosineDistance([0, 0], [1, 1]) == .infinity)
+    }
+}
+```
+- [ ] **Step 2 — run, confirm fail to compile.**
+- [ ] **Step 3 — implement:**
+```swift
+import Foundation
+
+/// Pure voice-embedding comparison. Smaller distance = more similar. Lives in
+/// MeetingKit (no FluidAudio dependency) so recognition logic is unit-testable.
+public enum VoiceMatch {
+    /// Cosine distance in [0, 2]; `.infinity` for empty/zero-magnitude/length-
+    /// mismatched inputs (treated as "cannot match").
+    public static func cosineDistance(_ a: [Float], _ b: [Float]) -> Float {
+        guard !a.isEmpty, a.count == b.count else { return .infinity }
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in a.indices { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        guard na > 0, nb > 0 else { return .infinity }
+        let sim = dot / (na.squareRoot() * nb.squareRoot())
+        return 1 - max(-1, min(1, sim))
+    }
+}
+```
+- [ ] **Step 4 — run, 4 pass. Step 5 — commit** `feat: add pure cosine voice-distance helper`.
+
+## Task R3: KnownSpeaker + SpeakerLibrary storage
+
+**Files:** Create `Sources/MeetingKit/SpeakerLibrary.swift`; Test `Tests/MeetingKitTests/SpeakerLibraryTests.swift`.
+
+- [ ] **Step 1 — failing tests** (round-trip persistence + upsert merge + rename + me):
+```swift
+import Testing
+import Foundation
+@testable import MeetingKit
+
+@Suite("SpeakerLibrary")
+struct SpeakerLibraryTests {
+    private func tempURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("spk-\(UUID().uuidString).json")
+    }
+
+    @Test("upsert adds, persists, and reloads")
+    func upsertPersists() throws {
+        let url = tempURL()
+        let lib = SpeakerLibrary(url: url)
+        try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
+        let reloaded = SpeakerLibrary(url: url)
+        #expect(reloaded.all().map(\.name) == ["Sam"])
+        #expect(reloaded.all().first?.embedding == [1, 0, 0])
+    }
+
+    @Test("upsert of an existing name updates its voiceprint, not a duplicate")
+    func upsertMerges() throws {
+        let url = tempURL()
+        let lib = SpeakerLibrary(url: url)
+        try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
+        try lib.upsert(name: "Sam", embedding: [0, 1, 0], isMe: false)
+        #expect(lib.all().count == 1)
+        #expect(lib.all().first?.embedding == [0, 1, 0])
+    }
+
+    @Test("me returns the isMe speaker")
+    func meAccessor() throws {
+        let lib = SpeakerLibrary(url: tempURL())
+        try lib.upsert(name: "Me", embedding: [1, 1, 1], isMe: true)
+        try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
+        #expect(lib.me?.name == "Me")
+    }
+
+    @Test("rename changes the name and persists")
+    func rename() throws {
+        let url = tempURL()
+        let lib = SpeakerLibrary(url: url)
+        try lib.upsert(name: "Speaker 2", embedding: [1, 0, 0], isMe: false)
+        let id = lib.all().first!.id
+        try lib.rename(id: id, to: "Pat")
+        #expect(SpeakerLibrary(url: url).all().map(\.name) == ["Pat"])
+    }
+}
+```
+- [ ] **Step 2 — run, confirm fail. Step 3 — implement** `SpeakerLibrary` as a `final class` that loads `[KnownSpeaker]` from `url` on init (empty if absent/corrupt), with `all()`, `me`, `upsert(name:embedding:isMe:)` (match by case-insensitive name → update embedding+updatedAt+isMe, else append new with a fresh UUID; pass `Date` in via a `now:` default param OR set `updatedAt` with `Date()` — NOTE scripts forbid `Date()` only in *workflow* scripts, not app code, so `Date()` is fine here), `rename(id:to:)`, `delete(id:)`, each persisting to `url` via `JSONEncoder`. Also define `KnownSpeaker` (per spec) here.
+- [ ] **Step 4 — run, pass. Step 5 — commit** `feat: add KnownSpeaker model + local SpeakerLibrary storage`.
+
+## Task R4: SpeakerRecognizer + SpeakerFuser uses resolved labels
+
+**Files:** Create `Sources/MeetingKit/SpeakerRecognizer.swift`; Modify `Sources/MeetingKit/SpeakerFuser.swift`; remove/retire `Sources/MeetingKit/DiarizationLabeler.swift` (fold numbering into SpeakerRecognizer); Tests: `Tests/MeetingKitTests/SpeakerRecognizerTests.swift`, update `SpeakerFuserTests.swift`, delete `DiarizationLabelerTests.swift`.
+
+- [ ] **Step 1 — SpeakerRecognizer tests** (known confident match → name; weak match → Speaker N; numbering by first appearance excluding known/Me; Me match):
+```swift
+import Testing
+import Foundation
+@testable import MeetingKit
+
+@Suite("SpeakerRecognizer")
+struct SpeakerRecognizerTests {
+    private func outcome(_ pairs: [(String, [Float])]) -> DiarizationOutcome {
+        var spans: [DiarizedSpan] = []; var emb: [String: [Float]] = [:]
+        var t = 0.0
+        for (id, e) in pairs { spans.append(DiarizedSpan(start: t, end: t + 1, speakerID: id)); emb[id] = e; t += 1 }
+        return DiarizationOutcome(spans: spans, embeddings: emb)
+    }
+
+    @Test("confident match to a known speaker uses their name") 
+    func known() throws {
+        let lib = SpeakerLibrary(url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).json"))
+        try lib.upsert(name: "Me", embedding: [1, 0, 0], isMe: true)
+        try lib.upsert(name: "Sam", embedding: [0, 1, 0], isMe: false)
+        let out = outcome([("c0", [1, 0, 0]), ("c1", [0, 1, 0])])
+        let labels = SpeakerRecognizer.resolve(outcome: out, library: lib, threshold: 0.3)
+        #expect(labels["c0"] == "Me")
+        #expect(labels["c1"] == "Sam")
+    }
+
+    @Test("weak (above-threshold) match stays an anonymous Speaker N")
+    func weak() throws {
+        let lib = SpeakerLibrary(url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).json"))
+        try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
+        let out = outcome([("c0", [0, 1, 0])])     // orthogonal → distance 1 > threshold
+        let labels = SpeakerRecognizer.resolve(outcome: out, library: lib, threshold: 0.3)
+        #expect(labels["c0"] == "Speaker 2")
+    }
+
+    @Test("unmatched speakers are numbered from 2 by first appearance")
+    func numbering() {
+        let lib = SpeakerLibrary(url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).json"))
+        let out = outcome([("zzz", [9, 9, 9]), ("aaa", [8, 8, 8])])
+        let labels = SpeakerRecognizer.resolve(outcome: out, library: lib, threshold: 0.3)
+        #expect(labels["zzz"] == "Speaker 2")
+        #expect(labels["aaa"] == "Speaker 3")
+    }
+}
+```
+- [ ] **Step 2 — run, confirm fail. Step 3 — implement** `SpeakerRecognizer.resolve(outcome:library:threshold:) -> [String: String]`: for each cluster id in order of first appearance in `outcome.spans`, find the library speaker minimizing `VoiceMatch.cosineDistance(clusterEmbedding, known.embedding)`; if best distance ≤ `threshold` → that name; else assign next `"Speaker N"` (N from 2, incremented only for anonymous clusters). Provide a default `threshold` constant (conservative, e.g. `0.45`) as `public static let defaultThreshold`.
+- [ ] **Step 4 — update SpeakerFuser:** replace the `micDiarization: [DiarizedSpan]` + internal `DiarizationLabeler` call with parameters `micDiarization: [DiarizedSpan] = []` AND `micLabels: [String: String] = [:]` (the resolved clusterID→label map). For a mic segment: if `micDiarization` empty → `micLabel`; else find the span containing the midpoint (reuse the containment logic, now inline or via a small private helper since DiarizationLabeler is being removed) and map its `speakerID` through `micLabels`, falling back to `micLabel`. Update `SpeakerFuserTests` accordingly (pass `micLabels`). Delete `DiarizationLabeler.swift` + its test.
+- [ ] **Step 5 — run full suite, pass. Step 6 — commit** `feat: speaker recognition against the library; fuser uses resolved labels`.
+
+## Task R5: MeetingProcessor resolves library + persists per-meeting map
+
+**Files:** Modify `Sources/MeetingKit/MeetingProcessor.swift`, `Sources/MeetingKit/MeetingStore.swift` (add per-meeting speaker-map persistence); Test `Tests/MeetingKitTests/MeetingProcessorDiarizationTests.swift`.
+
+- [ ] **Step 1 — per-meeting map model + store.** Add to MeetingKit:
+```swift
+/// The diarization result persisted per meeting so speakers can be renamed later
+/// without re-diarizing: each cluster's voiceprint and its resolved label.
+public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
+    public var labelByCluster: [String: String]
+    public var embeddingByCluster: [String: [Float]]
+    public init(labelByCluster: [String: String], embeddingByCluster: [String: [Float]]) {
+        self.labelByCluster = labelByCluster; self.embeddingByCluster = embeddingByCluster
+    }
+}
+```
+Add `MeetingStore.saveSpeakerMap(_:for:)` / `speakerMap(for:) -> MeetingSpeakerMap?` writing `speakers.json` in the meeting bundle (mirror `saveTranscript`). Add a store round-trip test.
+- [ ] **Step 2 — processor change.** `MeetingProcessor.init` takes `diarizer: Diarizing = StubDiarizer()` and `library: SpeakerLibrary?` (nil → no recognition). In `process`: get `outcome = try? await diarizer.diarize(audioFile: micURL, progress: onProgress) ?? DiarizationOutcome(spans: [], embeddings: [:])`; `let micLabels = library.map { SpeakerRecognizer.resolve(outcome: outcome, library: $0, threshold: SpeakerRecognizer.defaultThreshold) } ?? [:]`; fuse with `micDiarization: outcome.spans, micLabels: micLabels`; then if non-empty persist `MeetingSpeakerMap(labelByCluster: micLabels, embeddingByCluster: outcome.embeddings)` via the store. Keep best-effort (errors → empty).
+- [ ] **Step 3 — update the test stubs** to the new `diarize` signature and add an assertion that the per-meeting map is saved with the cluster embedding. Keep the "Speaker 2" and "failing diarizer → Me" tests (adapt: with a library containing no match, cluster → "Speaker 2").
+- [ ] **Step 4 — full suite pass. Step 5 — commit** `feat: recognize library speakers in processing; persist per-meeting speaker map`.
+
+## Task R6: Rename flow (pure relabel + enrollment embedding)
+
+**Files:** Create `Sources/MeetingKit/TranscriptRelabeler.swift`; Modify `Sources/MeetingKit/Diarizer.swift` (add enrollment-embedding API); Tests for both.
+
+- [ ] **Step 1 — TranscriptRelabeler test + impl.** Pure function `TranscriptRelabeler.rename(in transcript: String, from old: String, to new: String) -> String` that replaces speaker-label occurrences at line starts (the transcript format is `"[hh:mm:ss] Speaker 2: text"` — replace the `Speaker 2:` label token specifically, not arbitrary text). Read `Sources/MeetingKit/TranscriptFormatter.swift` first to match the exact label rendering (e.g. how timestamp + speaker are emitted) and write the regex/replacement to target only the speaker label. Tests: renames all lines for that speaker; does not touch other speakers or body text that happens to contain the word.
+- [ ] **Step 2 — enrollment embedding API.** On `Diarizing` add `func enrollmentEmbedding(audioFile: URL) async throws -> [Float]?` (stub returns nil). In `FluidAudioDiarizer`, implement via diarizing the clip and returning the dominant cluster centroid (reuse the helper retained from R1). This is how onboarding turns a read-aloud clip into the "Me" voiceprint.
+- [ ] **Step 3 — run, pass. Step 4 — commit** `feat: transcript relabel + enrollment-embedding extraction`.
+
+## Task R7: App settings + library + AppState wiring
+
+**Files:** Modify `Sources/MeetingAssistant/Settings.swift`, `Sources/MeetingAssistant/AppState.swift`.
+
+- [ ] **Step 1 — Settings:** keep the `identifyInRoomSpeakers` toggle (default off). Expose `let speakerLibrary = SpeakerLibrary(url: <Application Support>/MeetingAssistant/speakers.json)` and `func makeDiarizer() -> Diarizing { Backends.makeDiarizer() }`. Remove the old `enrollment`/`enrollmentURL`/`isEnrolled` accessors (superseded by the library + `me`). `isEnrolled` becomes `speakerLibrary.me != nil`.
+- [ ] **Step 2 — AppState:** own a `diarizer` (`Backends.makeDiarizer()`); in `process(_:)` build `MeetingProcessor(store: store, transcriber: transcriber, diarizer: settings.identifyInRoomSpeakers ? diarizer : StubDiarizer(), library: settings.identifyInRoomSpeakers ? settings.speakerLibrary : nil)`. In `prepareModel()`, when `identifyInRoomSpeakers`, best-effort `try? await diarizer.prepare(...)`. Add a `@MainActor func renameSpeaker(in recording:, from:, to:)` that: loads the meeting's `MeetingSpeakerMap`, rewrites `transcript.md` via `TranscriptRelabeler`, updates the map's label, upserts the cluster embedding into `settings.speakerLibrary` under the new name, and refreshes the displayed transcript.
+- [ ] **Step 3 — build, commit** `feat: wire speaker library + rename into app state`. (UI-adjacent; verified by building + Task R9 run.)
+
+## Task R8: Enrollment recorder (reads a script)
+
+**Files:** Create `Sources/MeetingAssistant/EnrollmentRecorder.swift` (per original Task 9's AVAudioRecorder code, recording 16 kHz mono WAV to a temp URL). Add a constant `EnrollmentScript.passage` (a fixed ~60-word neutral paragraph for the user to read). Build + commit `feat: voice enrollment recorder + reading script`.
+
+## Task R9: UI — onboarding step, Speakers section, Settings library
+
+**Files:** Modify `Sources/MeetingAssistant/OnboardingView.swift`, `MainWindowView.swift`, `SettingsView.swift`.
+
+- [ ] **Onboarding:** add a "Teach the app your voice" step that shows `EnrollmentScript.passage`, a Record/Stop button (driving `EnrollmentRecorder`), and on finish calls `diarizer.enrollmentEmbedding(audioFile:)` → `settings.speakerLibrary.upsert(name: "Me", embedding:, isMe: true)`. Show enrolled state. Mirror the existing onboarding step style (read OnboardingView first).
+- [ ] **Transcript pane (MainWindowView `TranscriptDetail`):** add a **Speakers** section listing the speakers in the meeting's `MeetingSpeakerMap` (distinct labels), each with an editable `TextField`; on commit call `state.renameSpeaker(in: recording, from: oldLabel, to: newName)`. Recognized known speakers already show their names. Read the current detail-pane code first and match its layout.
+- [ ] **Settings:** add a section to manage the library (`ForEach` over `settings.speakerLibrary.all()` with rename/delete) and a "Re-record my voice" button reusing the onboarding enrollment flow. Keep the `identifyInRoomSpeakers` toggle.
+- [ ] Build, commit `feat: onboarding voice enrollment, transcript Speakers section, library settings`.
+
+## Task R10: Manual end-to-end verification
+
+- [ ] `./Scripts/build-app.sh`; launch; complete onboarding voice enrollment (read the script). Confirm `speakers.json` gets a `Me` entry.
+- [ ] Enable "Identify multiple in-room speakers". Record a multi-person ad-hoc session; process. Confirm your lines = `Me`, others = `Speaker 2/3`.
+- [ ] In the transcript, rename `Speaker 2` → a name; confirm the transcript rewrites and the name persists.
+- [ ] Record a SECOND session with the same person; confirm they're auto-labeled with the saved name (cross-meeting recognition).
+- [ ] Toggle the feature off; confirm solo meetings still label mic as `Me` (no regression).
+- [ ] Commit any fixes with `fix:`.
+
+## Revision self-review
+
+- **Spec coverage (extension):** library storage (R3), voiceprint distance (R2), recognition + conservative threshold (R4), diarizer returns embeddings (R1), per-meeting persistence (R5), rename rewrite + enrollment embedding (R6), app wiring (R7), recorder+script (R8), onboarding+Speakers section+settings library (R9), verification incl. cross-meeting recognition (R10). All extension spec sections map to a task.
+- **Supersedes:** original Tasks 7–11 and `DiarizationLabeler` (removed in R4) and `MeEnrollment`-based matching (removed in R1). `MeEnrollment` struct may be deleted if unused after R7 — check and remove to avoid dead code.
+- **Type consistency:** `DiarizationOutcome{spans,embeddings}`, `Diarizing.diarize(audioFile:progress:)`, `Diarizing.enrollmentEmbedding(audioFile:)`, `KnownSpeaker{id,name,isMe,embedding,updatedAt}`, `SpeakerLibrary(url:)` + `all/me/upsert(name:embedding:isMe:)/rename(id:to:)/delete(id:)`, `VoiceMatch.cosineDistance`, `SpeakerRecognizer.resolve(outcome:library:threshold:)` + `defaultThreshold`, `MeetingSpeakerMap{labelByCluster,embeddingByCluster}`, `MeetingStore.saveSpeakerMap(_:for:)`/`speakerMap(for:)`, `TranscriptRelabeler.rename(in:from:to:)` used consistently.

@@ -107,6 +107,43 @@ struct MainWindowView: View {
                 )
             }
         }
+        // A record control in the title bar so recording can be started/stopped
+        // with the window open — not only from the menu bar.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { recordControl }
+        }
+    }
+
+    /// State-aware record control for the window toolbar. Mirrors the menu bar's
+    /// Start/Stop so the two stay in lockstep: Record → Stop & Process → progress.
+    @ViewBuilder
+    private var recordControl: some View {
+        switch state.status {
+        case .recording:
+            Button(role: .destructive) {
+                Task { await state.stopCapture() }
+            } label: {
+                Label("Stop & Process", systemImage: "stop.circle")
+            }
+            .help("Stop recording and make the transcript")
+        case .processing:
+            // Non-interactive while post-processing runs; matches the menu bar.
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(state.progressPhase ?? "Processing…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .idle:
+            // Recording can begin before the model finishes downloading —
+            // capture is independent of it and processing waits — so this stays
+            // enabled regardless of model readiness (same as the menu bar).
+            Button {
+                Task { await state.startAdHocCapture() }
+            } label: {
+                Label("Record", systemImage: "record.circle")
+            }
+            .help("Start recording a meeting now")
+        }
     }
 
     /// Shown when there are no recordings yet — a real empty state with a clear
@@ -222,6 +259,25 @@ private struct MeetingDetailView: View {
                 .padding(.bottom, 8)
             }
 
+            // Speakers section — only shown when the transcript has speaker labels.
+            let speakers = state.meetingSpeakers(for: recording)
+            if !speakers.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Speakers")
+                        .font(.headline)
+                    Text("Rename a speaker to teach the app their voice for next time.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(speakers, id: \.self) { label in
+                        SpeakerRenameRow(originalLabel: label) { newName in
+                            state.renameSpeaker(in: recording, from: label, to: newName)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                Divider()
+            }
+
             ScrollView { MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._") }
         }
     }
@@ -253,6 +309,44 @@ private struct MarkdownText: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
+    }
+}
+
+/// A single row in the Speakers section: shows the current label with an inline
+/// text field so the user can rename it. "Save" is enabled only when the draft
+/// is non-empty and differs from the original — avoids no-op writes.
+private struct SpeakerRenameRow: View {
+    let originalLabel: String
+    let onRename: (String) -> Void
+
+    @State private var draft: String
+
+    init(originalLabel: String, onRename: @escaping (String) -> Void) {
+        self.originalLabel = originalLabel
+        self.onRename = onRename
+        _draft = State(initialValue: originalLabel)
+    }
+
+    private var canSave: Bool { !draft.isEmpty && draft != originalLabel }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "person.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            TextField("Name", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 200)
+            Button {
+                onRename(draft)
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(canSave ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSave)
+            .help("Save new name")
+        }
     }
 }
 

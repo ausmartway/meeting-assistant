@@ -24,4 +24,22 @@ public enum Backends {
         return false
         #endif
     }
+
+    /// The on-device diarizer: real FluidAudio when available, else the stub.
+    public static func makeDiarizer() -> Diarizing {
+        #if canImport(FluidAudio)
+        return FluidAudioDiarizer()
+        #else
+        return StubDiarizer()
+        #endif
+    }
+
+    /// Whether a real on-device diarization backend is compiled in.
+    public static var hasLocalDiarization: Bool {
+        #if canImport(FluidAudio)
+        return true
+        #else
+        return false
+        #endif
+    }
 }

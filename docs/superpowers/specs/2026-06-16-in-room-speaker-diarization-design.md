@@ -1,7 +1,7 @@
 # In-room speaker diarization — design
 
 **Date:** 2026-06-16
-**Status:** Approved (design)
+**Status:** Approved (design); **extended 2026-06-16 — see "Extension: local speaker library" at the end, which supersedes the narrow "Me-only enrollment" parts below.**
 
 ## Problem
 
@@ -179,3 +179,122 @@ and the other framework integrations are handled.
    stay `"Speaker"`).
 2. Feature off by default; enabling requires enrollment.
 3. Enrollment clip ~15 seconds.
+
+---
+
+# Extension: local speaker library (approved 2026-06-16)
+
+This extends the feature from "match only the enrolled user" to a **local,
+cross-meeting speaker library**. It supersedes the "Me-only enrollment" mechanics
+above (the `enrollSpeaker`/single-`MeEnrollment` matching). The pipeline shape,
+the `Diarizing` seam, and Tasks 1–6 are unchanged; the matching/labeling layer and
+the app UI grow.
+
+## New goals
+
+- **Recognize known people by voice in every meeting.** Each meeting's voice
+  clusters are matched against a saved library; confident matches get the stored
+  name, the rest stay `"Speaker 2"`, `"Speaker 3"`, ….
+- **Name anonymous speakers, persistently.** In a meeting's transcript the user
+  can rename a `"Speaker N"`; that rewrites the transcript **and** saves that
+  voice's print to the library, so the same person is auto-named next time.
+- **"Me" is just a known speaker** (`isMe == true`), enrolled by reading an
+  on-screen script during initial setup (and re-doable in Settings).
+
+## Data model & storage
+
+```swift
+/// A person the app can recognize by voice across meetings.
+public struct KnownSpeaker: Codable, Sendable, Identifiable, Equatable {
+    public let id: UUID
+    public var name: String        // "Me", "Sam", …
+    public var isMe: Bool
+    public var embedding: [Float]   // voiceprint centroid
+    public var updatedAt: Date
+}
+```
+
+- **`SpeakerLibrary`** — loads/saves `[KnownSpeaker]` to
+  `Application Support/MeetingAssistant/speakers.json` (URL injected for tests).
+  API: `all()`, `me`, `upsert(name:embedding:isMe:)`, `rename(id:to:)`,
+  `delete(id:)`.
+- **Per-meeting speaker map** — saved inside the recording bundle
+  (`speakers.json` next to `transcript.md`): `clusterID → embedding` and
+  `clusterID → resolved display label`. This lets a later rename recover the
+  voiceprint and rewrite the transcript without re-diarizing.
+
+## Diarizer returns voiceprints
+
+The engine stops doing user-matching. `Diarizing.diarize` now returns:
+
+```swift
+public struct DiarizationOutcome: Sendable, Equatable {
+    public let spans: [DiarizedSpan]            // speakerID = raw cluster id
+    public let embeddings: [String: [Float]]    // cluster id → centroid voiceprint
+}
+```
+
+`FluidAudioDiarizer` simply surfaces FluidAudio's `result.segments` +
+`result.speakerDatabase` (cluster → centroid); the `matchEnrolledSpeaker` logic is
+removed from it. `StubDiarizer` returns an empty outcome.
+
+## Recognition & labeling (pure, unit-tested)
+
+- **`VoiceMatch.cosineDistance(_:_:) -> Float`** — pure, in MeetingKit (so
+  recognition is testable without FluidAudio). Smaller = more similar.
+- **`SpeakerRecognizer.resolve(outcome:library:threshold:) -> [String: String]`** —
+  maps each cluster id to a display label: nearest `KnownSpeaker` with cosine
+  distance ≤ a **conservative** threshold → that name; otherwise `"Speaker 2"`,
+  `"Speaker 3"`, … numbered by first appearance, with known/`"Me"` names excluded
+  from the numbering. Supersedes `DiarizationLabeler`. Weak (near-threshold)
+  matches deliberately stay `"Speaker N"` rather than risk a wrong name.
+
+## Pipeline & fusion changes
+
+- `MeetingProcessor`: diarize mic → `SpeakerRecognizer.resolve` against the
+  library → fuse using the resolved `clusterID → label` map → persist the
+  per-meeting speaker map (embeddings + labels) in the bundle. Best-effort: any
+  diarization/recognition failure degrades to today's `"Me"`.
+- `SpeakerFuser`: instead of computing labels itself, it takes the resolved
+  `clusterID → label` map plus the spans and applies them to mic segments
+  (midpoint containment; fallback `"Me"`). System channel unchanged.
+
+## Rename flow
+
+- A pure function rewrites a transcript's speaker labels (`"Speaker 2:" → "Sam:"`).
+- Renaming a speaker in the transcript pane: rewrite `transcript.md`, update the
+  per-meeting map's label, and `upsert` that cluster's embedding into the library
+  under the new name (so future meetings recognize them). Renaming to an existing
+  known name merges/updates that speaker's voiceprint.
+
+## Enrollment by reading a script
+
+- A fixed on-screen passage; record ~15–20 s; diarize the clip; take the dominant
+  speaker's embedding; `upsert` it as the `isMe` `KnownSpeaker`.
+- Presented in **onboarding** (initial setup) and re-doable in Settings.
+
+## UI
+
+- **Onboarding:** a "Teach the app your voice" step — show the script, Record,
+  confirm enrolled.
+- **Transcript detail pane:** a **Speakers** section listing the meeting's
+  speakers with editable name fields; saving rewrites the transcript and saves the
+  voiceprint. Recognized known speakers appear already named.
+- **Settings:** manage the library (list, rename, delete known speakers),
+  re-enroll "Me". The "Identify multiple in-room speakers" toggle remains; it now
+  also gates auto-recognition of known speakers.
+
+## Testing
+
+Pure logic unit-tested (swift-testing): `VoiceMatch.cosineDistance`,
+`SpeakerLibrary` upsert/match/rename round-trips, `SpeakerRecognizer.resolve`
+(known match, conservative threshold, `"Speaker N"` numbering, `"Me"`),
+transcript-relabel rewrite, per-meeting map persistence. FluidAudio engine and all
+SwiftUI/AVFoundation pieces are verified by running the app.
+
+## Privacy
+
+Voiceprints (float vectors) and names never leave the device — stored under
+Application Support alongside the existing local models. No raw enrollment audio is
+retained beyond what's needed to compute the embedding (the clip may be deleted
+after enrollment).

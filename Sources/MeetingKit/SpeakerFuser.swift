@@ -2,9 +2,12 @@ import Foundation
 
 /// Assigns a speaker label to each transcript segment by combining two signals:
 ///
-///  1. **Audio channel** — microphone segments are always the local user. This
-///     "you vs. others" split is exact because the two channels are recorded
-///     separately, so it never depends on fragile screen reading.
+///  1. **Audio channel** — microphone segments are the local user ("Me") by
+///     default. This "you vs. others" split is exact because the two channels are
+///     recorded separately, so it never depends on fragile screen reading. When
+///     mic diarization spans are supplied, mic segments are instead resolved to
+///     distinct in-room speakers (the enrolled user stays "Me"), falling back to
+///     "Me" outside any span.
 ///  2. **Active-speaker timeline** — for remote (system-audio) segments, we look
 ///     up who was highlighted on screen at the segment's midpoint. The active
 ///     speaker is assumed to hold until the next sample, so we take the most
@@ -14,19 +17,35 @@ import Foundation
 /// the segment gets a generic fallback label.
 public enum SpeakerFuser {
 
+    /// `micDiarization` and `micLabels` are co-derived and must travel together:
+    /// `micLabels` maps the cluster ids in `micDiarization` to display names (from
+    /// `SpeakerRecognizer.resolve`). Passing spans without their labels makes every
+    /// mic segment silently fall back to `micLabel`, flattening distinct speakers —
+    /// so always supply both, or neither.
     public static func fuse(
         segments: [TranscriptSegment],
         timeline: SpeakerTimeline,
+        micDiarization: [DiarizedSpan] = [],
+        micLabels: [String: String] = [:],
         micLabel: String = "Me",
         unknownLabel: String = "Speaker"
     ) -> [LabeledSegment] {
-        segments.map { segment in
+        return segments.map { segment in
+            let midpoint = (segment.start + segment.end) / 2
             let speaker: String
             switch segment.channel {
             case .microphone:
-                speaker = micLabel
+                // No diarization → today's behavior. Otherwise resolve the span at
+                // the segment midpoint and map its cluster id through `micLabels`,
+                // falling back to "Me" in gaps or for unmapped clusters.
+                if micDiarization.isEmpty {
+                    speaker = micLabel
+                } else if let span = span(at: midpoint, in: micDiarization) {
+                    speaker = micLabels[span.speakerID] ?? micLabel
+                } else {
+                    speaker = micLabel
+                }
             case .system:
-                let midpoint = (segment.start + segment.end) / 2
                 speaker = activeSpeaker(at: midpoint, in: timeline) ?? unknownLabel
             }
             return LabeledSegment(
@@ -36,6 +55,12 @@ public enum SpeakerFuser {
                 speaker: speaker
             )
         }
+    }
+
+    /// The first diarization span whose `[start, end)` contains `t` (end
+    /// exclusive so adjacent spans don't both match), or nil if `t` is in a gap.
+    private static func span(at t: TimeInterval, in spans: [DiarizedSpan]) -> DiarizedSpan? {
+        spans.first(where: { t >= $0.start && t < $0.end })
     }
 
     /// The on-screen active speaker's name at time `t`, or nil if unknown.

@@ -96,6 +96,10 @@ final class AppState: ObservableObject {
     /// downloaded/loaded exactly once (at launch) rather than per meeting.
     private var transcriber: Transcribing
 
+    /// Shared on-device diarizer, warmed up alongside the transcriber so in-room
+    /// speaker separation doesn't pay the model load cost on the first meeting.
+    private var diarizer: Diarizing
+
     init() {
         let calendar = CalendarWatcher()
         self.calendar = calendar
@@ -110,6 +114,7 @@ final class AppState: ObservableObject {
             model: settings.transcriptionModel,
             workers: settings.transcriptionWorkers
         )
+        self.diarizer = Backends.makeDiarizer()
         // Re-publish permission changes so onboarding/menu views observing AppState
         // update live as the user grants each capability.
         permissions.objectWillChange
@@ -176,6 +181,12 @@ final class AppState: ObservableObject {
         }
         do {
             try await transcriber.prepare(progress: tHandler)
+            // Best-effort: warm up the diarizer too when in-room identification is
+            // enabled, so the first meeting doesn't pay the model load cost. A
+            // failure here must not block transcription, which works without it.
+            if settings.identifyInRoomSpeakers {
+                try? await diarizer.prepare(progress: tHandler)
+            }
             modelReady = true
             modelStatusText = "Model ready"
         } catch {
@@ -280,7 +291,17 @@ final class AppState: ObservableObject {
             status = .idle
             return
         }
-        let processor = MeetingProcessor(store: store, transcriber: transcriber)
+        // Diarization requires the user to have enrolled their voice — otherwise
+        // their own mic audio would be split off as "Speaker 2" instead of "Me",
+        // a worse result than today's blanket "Me". Without enrollment we fall back
+        // to the stub (blanket "Me"), matching pre-feature behavior.
+        let useDiar = settings.identifyInRoomSpeakers && settings.speakerLibrary.me != nil
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: transcriber,
+            diarizer: useDiar ? diarizer : StubDiarizer(),
+            knownSpeakers: useDiar ? settings.speakerLibrary.all() : []
+        )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
                 self?.progressFraction = fraction
@@ -313,9 +334,82 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// Rename a speaker in a saved transcript. Rewrites the transcript text and,
+    /// when the meeting has a persisted speaker map, teaches the shared library the
+    /// new name for that cluster's voiceprint so the person is recognized in future
+    /// meetings. Best-effort: a missing map just rewrites the text.
+    @MainActor
+    func renameSpeaker(in recording: MeetingRecording, from oldLabel: String, to newName: String) {
+        let meetingID = recording.meeting.id
+        let map = store.speakerMap(for: meetingID)
+
+        // 1. Rewrite the rendered transcript's labels.
+        guard let current = store.transcript(for: meetingID) else { return }
+        let updated = TranscriptRelabeler.rename(in: current, from: oldLabel, to: newName)
+        try? store.saveTranscript(updated, for: meetingID)
+
+        // 2. If we have a speaker map, learn the voiceprint under the new name and
+        //    update the map's label so a later rename starts from the right place.
+        if var map {
+            if let cluster = map.labelByCluster.first(where: { $0.value == oldLabel })?.key {
+                if let embedding = map.embeddingByCluster[cluster] {
+                    try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: false)
+                }
+                map.labelByCluster[cluster] = newName
+                try? store.saveSpeakerMap(map, for: meetingID)
+            }
+        }
+
+        // Transcripts are read on demand via `transcript(for:)`, so a generic
+        // change notification is enough to refresh any view showing one.
+        objectWillChange.send()
+    }
+
     /// On-disk transcript file, for "Reveal in Finder".
     func transcriptURL(for recording: MeetingRecording) -> URL {
         store.transcriptURL(for: recording.meeting.id)
+    }
+
+    // MARK: - Speakers
+
+    /// Distinct speaker labels detected in a meeting (from its persisted speaker
+    /// map), sorted for stable display. Empty if the meeting wasn't diarized.
+    func meetingSpeakers(for recording: MeetingRecording) -> [String] {
+        guard let map = store.speakerMap(for: recording.meeting.id) else { return [] }
+        return Array(Set(map.labelByCluster.values)).sorted()
+    }
+
+    /// The known speakers in the shared library (for Settings management).
+    func knownSpeakers() -> [KnownSpeaker] { settings.speakerLibrary.all() }
+
+    /// Rename a known speaker in the library (Settings). Does not rewrite past
+    /// transcripts — only affects future recognition and the library listing.
+    func renameKnownSpeaker(id: UUID, to newName: String) {
+        try? settings.speakerLibrary.rename(id: id, to: newName)
+        objectWillChange.send()
+    }
+
+    /// Remove a known speaker from the library (Settings).
+    func deleteKnownSpeaker(id: UUID) {
+        try? settings.speakerLibrary.delete(id: id)
+        objectWillChange.send()
+    }
+
+    /// Enroll (or re-enroll) the local user "Me" from a clip of them reading the
+    /// enrollment script: extract the voiceprint and store it in the library.
+    /// Returns true on success. Best-effort: returns false if no voice was found.
+    func enrollMe(audioFile: URL) async -> Bool {
+        do {
+            guard let embedding = try await diarizer.enrollmentEmbedding(audioFile: audioFile) else {
+                return false
+            }
+            try settings.speakerLibrary.upsert(name: "Me", embedding: embedding, isMe: true)
+            objectWillChange.send()
+            return true
+        } catch {
+            lastError = userFacingMessage(for: .transcribing, error: error)
+            return false
+        }
     }
 
     /// The meeting currently being recorded or processed, if any.

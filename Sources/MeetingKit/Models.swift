@@ -145,3 +145,14 @@ public struct MeetingRecording: Codable, Sendable, Equatable {
         self.timeline = timeline
     }
 }
+
+/// The diarization result persisted per meeting so speakers can be renamed later
+/// without re-diarizing: each cluster's voiceprint and its resolved display label.
+public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
+    public var labelByCluster: [String: String]
+    public var embeddingByCluster: [String: [Float]]
+    public init(labelByCluster: [String: String], embeddingByCluster: [String: [Float]]) {
+        self.labelByCluster = labelByCluster
+        self.embeddingByCluster = embeddingByCluster
+    }
+}

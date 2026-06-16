@@ -15,6 +15,8 @@ let package = Package(
     dependencies: [
         // On-device speech-to-text (runs the encoder on the GPU/Neural Engine).
         .package(url: "https://github.com/argmaxinc/WhisperKit", from: "1.0.0"),
+        // On-device speaker diarization + enrollment (CoreML, macOS 14+).
+        .package(url: "https://github.com/FluidInference/FluidAudio", from: "0.5.0"),
     ],
     targets: [
         // Core library: domain models, pure logic, and Apple-framework integrations.
@@ -23,6 +25,7 @@ let package = Package(
             name: "MeetingKit",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/MeetingKit"
         ),
