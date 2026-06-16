@@ -2,9 +2,12 @@ import Foundation
 
 /// Assigns a speaker label to each transcript segment by combining two signals:
 ///
-///  1. **Audio channel** — microphone segments are always the local user. This
-///     "you vs. others" split is exact because the two channels are recorded
-///     separately, so it never depends on fragile screen reading.
+///  1. **Audio channel** — microphone segments are the local user ("Me") by
+///     default. This "you vs. others" split is exact because the two channels are
+///     recorded separately, so it never depends on fragile screen reading. When
+///     mic diarization spans are supplied, mic segments are instead resolved to
+///     distinct in-room speakers (the enrolled user stays "Me"), falling back to
+///     "Me" outside any span.
 ///  2. **Active-speaker timeline** — for remote (system-audio) segments, we look
 ///     up who was highlighted on screen at the segment's midpoint. The active
 ///     speaker is assumed to hold until the next sample, so we take the most
