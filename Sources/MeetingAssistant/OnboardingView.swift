@@ -52,6 +52,7 @@ struct OnboardingView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
+        .tint(Theme.accent)
     }
 
     private var header: some View {

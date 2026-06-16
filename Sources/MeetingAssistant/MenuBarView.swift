@@ -8,8 +8,9 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "waveform.circle.fill")
+                    .font(.title3).foregroundStyle(Theme.accent)
                 Text("Meeting Assistant").font(.headline)
             }
 
@@ -97,6 +98,7 @@ struct MenuBarView: View {
         }
         .padding(14)
         .frame(width: 280)
+        .tint(Theme.accent)
     }
 
     @ViewBuilder
