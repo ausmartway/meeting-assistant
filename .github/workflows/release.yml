@@ -125,3 +125,25 @@ jobs:
               --title "Meeting Assistant $GITHUB_REF_NAME" \
               --notes "$NOTES"
           fi
+
+      - name: Update Homebrew cask
+        # Point the in-repo Cask (Casks/meeting-assistant.rb) at this release: bump
+        # the version and the DMG's sha256, then commit back to main so
+        # `brew upgrade --cask meeting-assistant` picks it up automatically.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA="$(shasum -a 256 build/MeetingAssistant.dmg | awk '{print $1}')"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" Casks/meeting-assistant.rb
+          sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/meeting-assistant.rb
+          if git diff --quiet Casks/meeting-assistant.rb; then
+            echo "Cask already current."
+          else
+            git add Casks/meeting-assistant.rb
+            git commit -m "chore: update Homebrew cask to ${GITHUB_REF_NAME} [skip ci]"
+            git push origin main
+          fi

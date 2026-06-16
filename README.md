@@ -9,6 +9,19 @@ Target hardware: MacBook Pro M1 Pro, macOS 14 (Sonoma)+. Runs comfortably on
 
 ## Install
 
+### Homebrew (recommended)
+
+```sh
+brew tap ausmartway/meeting-assistant https://github.com/ausmartway/meeting-assistant
+brew install --cask meeting-assistant
+```
+
+The app isn't notarized by Apple, so macOS blocks the first launch — `brew`
+prints the one-time "Open Anyway" steps (or install with `--no-quarantine` to
+skip them). Update later with `brew upgrade --cask meeting-assistant`.
+
+### Manual (DMG)
+
 1. Download `MeetingAssistant.dmg` and double-click it.
 2. Drag **Meeting Assistant** onto the **Applications** folder in the window.
 3. Open **Applications** and double-click **Meeting Assistant**. Because the app
