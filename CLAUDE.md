@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Product requirements live in [`REQUIREMENTS.md`](REQUIREMENTS.md)** — the
+> explicit and implicit requirements for *what* the app must do and *how it must
+> feel*. Read it before changing behavior or UI; this file covers *how the code is
+> organized*. Keep `REQUIREMENTS.md` updated when requirements change.
+
 ## What this is
 
 A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 14**) that
