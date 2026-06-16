@@ -17,16 +17,27 @@ public enum SpeakerFuser {
     public static func fuse(
         segments: [TranscriptSegment],
         timeline: SpeakerTimeline,
+        micDiarization: [DiarizedSpan] = [],
         micLabel: String = "Me",
         unknownLabel: String = "Speaker"
     ) -> [LabeledSegment] {
-        segments.map { segment in
+        // Precompute diarized display labels once (empty when not diarizing).
+        let micLabels = DiarizationLabeler.displayLabels(for: micDiarization)
+        return segments.map { segment in
+            let midpoint = (segment.start + segment.end) / 2
             let speaker: String
             switch segment.channel {
             case .microphone:
-                speaker = micLabel
+                // No diarization → today's behavior. Otherwise resolve the span at
+                // the segment midpoint, falling back to "Me" in gaps.
+                if micDiarization.isEmpty {
+                    speaker = micLabel
+                } else {
+                    speaker = DiarizationLabeler.speaker(
+                        at: midpoint, spans: micDiarization, labels: micLabels
+                    ) ?? micLabel
+                }
             case .system:
-                let midpoint = (segment.start + segment.end) / 2
                 speaker = activeSpeaker(at: midpoint, in: timeline) ?? unknownLabel
             }
             return LabeledSegment(

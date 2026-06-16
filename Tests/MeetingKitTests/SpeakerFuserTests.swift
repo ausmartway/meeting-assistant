@@ -59,4 +59,41 @@ struct SpeakerFuserTests {
         let out = SpeakerFuser.fuse(segments: [sys(0, 2, "early words")], timeline: timeline)
         #expect(out.first?.speaker == "Alice")
     }
+
+    @Test("mic segments resolve to diarized speakers when spans are provided")
+    func micDiarizationLabels() {
+        let segments = [
+            TranscriptSegment(start: 0, end: 1, text: "hi", channel: .microphone),
+            TranscriptSegment(start: 2, end: 3, text: "hello", channel: .microphone),
+        ]
+        let spans = [
+            DiarizedSpan(start: 0, end: 1.5, speakerID: "Me"),
+            DiarizedSpan(start: 1.5, end: 4, speakerID: "spk_a"),
+        ]
+        let out = SpeakerFuser.fuse(
+            segments: segments,
+            timeline: SpeakerTimeline(samples: []),
+            micDiarization: spans
+        )
+        #expect(out.map(\.speaker) == ["Me", "Speaker 2"])
+    }
+
+    @Test("with no diarization spans, mic stays 'Me' (unchanged behavior)")
+    func micFallsBackToMe() {
+        let segments = [TranscriptSegment(start: 0, end: 1, text: "hi", channel: .microphone)]
+        let out = SpeakerFuser.fuse(segments: segments, timeline: SpeakerTimeline(samples: []))
+        #expect(out.map(\.speaker) == ["Me"])
+    }
+
+    @Test("mic segment whose midpoint is in a diarization gap falls back to 'Me'")
+    func micGapFallsBackToMe() {
+        let segments = [TranscriptSegment(start: 5, end: 6, text: "x", channel: .microphone)]
+        let spans = [DiarizedSpan(start: 0, end: 1, speakerID: "spk_a")]
+        let out = SpeakerFuser.fuse(
+            segments: segments,
+            timeline: SpeakerTimeline(samples: []),
+            micDiarization: spans
+        )
+        #expect(out.map(\.speaker) == ["Me"])
+    }
 }
