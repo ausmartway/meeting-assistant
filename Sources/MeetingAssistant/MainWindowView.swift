@@ -30,6 +30,12 @@ struct MainWindowView: View {
             .listStyle(.sidebar)
             .navigationTitle("Meeting Assistant")
             .frame(minWidth: 248)
+            // Large, always-visible primary action anchored to the sidebar.
+            .safeAreaInset(edge: .bottom) {
+                recordButton
+                    .padding(Theme.Space.s)
+                    .background(.bar)
+            }
             .confirmationDialog(
                 "Delete this meeting?",
                 isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -155,27 +161,33 @@ struct MainWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(Theme.Space.xl)
     }
 
-    // MARK: Toolbar record control
+    // MARK: Primary record action (large, in the sidebar)
 
     @ViewBuilder
-    private var recordControl: some View {
-        HStack(spacing: Theme.Space.s) {
-            if state.processing.current != nil {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(state.progressPhase ?? "Transcribing…").font(.caption).foregroundStyle(.secondary)
-                }
+    private var recordButton: some View {
+        if state.isRecording {
+            Button { Task { await state.stopCapture() } } label: {
+                Label("Stop & Transcribe", systemImage: "stop.fill").frame(maxWidth: .infinity)
             }
-            if state.isRecording {
-                Button(role: .destructive) { Task { await state.stopCapture() } } label: {
-                    Label("Stop & Transcribe", systemImage: "stop.fill")
-                }
-                .help("Stop recording and make the transcript")
-            } else {
-                Button { Task { await state.startAdHocCapture() } } label: {
-                    Label("Record", systemImage: "record.circle")
-                }
-                .help("Start recording a meeting now")
+            .tint(.red).buttonStyle(.borderedProminent).controlSize(.large)
+            .help("Stop recording and make the transcript")
+        } else {
+            Button { Task { await state.startAdHocCapture() } } label: {
+                Label("Record a meeting", systemImage: "record.circle").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            .help("Start recording a meeting now")
+        }
+    }
+
+    // The toolbar now shows only transcription progress; the record action is the
+    // prominent sidebar button.
+    @ViewBuilder
+    private var recordControl: some View {
+        if state.processing.current != nil {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(state.progressPhase ?? "Transcribing…").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
