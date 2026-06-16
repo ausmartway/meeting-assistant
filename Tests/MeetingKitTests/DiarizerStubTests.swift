@@ -35,16 +35,13 @@ struct DiarizerStubTests {
         #expect(spans.isEmpty)
     }
 
-    @Test("Backends.makeDiarizer returns a usable diarizer")
+    @Test("Backends.makeDiarizer returns a diarizer and exposes the capability flag")
     func makeDiarizer() async throws {
-        let d = Backends.makeDiarizer()
-        // Whichever backend compiles in, an unenrolled empty path yields no crash.
-        _ = try? await d.diarize(
-            audioFile: URL(fileURLWithPath: "/tmp/none.wav"),
-            enrollment: nil,
-            progress: nil
-        )
-        // Exercise the capability flag symbol.
+        // Only resolve the factory + capability flag. We deliberately do NOT call
+        // diarize() here: when the real FluidAudio backend is compiled in, that
+        // would download/compile CoreML models — framework integrations are
+        // verified by running the app, not in the unit suite.
+        _ = Backends.makeDiarizer()
         _ = Backends.hasLocalDiarization
     }
 }
