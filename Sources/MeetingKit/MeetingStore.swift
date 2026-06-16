@@ -53,6 +53,22 @@ public final class MeetingStore {
         try markdown.write(to: dir.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
     }
 
+    /// Persist the per-meeting speaker map (cluster voiceprints + display labels)
+    /// as `speakers.json`, so speakers can be renamed later without re-diarizing.
+    public func saveSpeakerMap(_ map: MeetingSpeakerMap, for meetingID: String) throws {
+        let url = try directory(for: meetingID).appendingPathComponent("speakers.json")
+        let data = try JSONEncoder().encode(map)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// Load the per-meeting speaker map, if present.
+    public func speakerMap(for meetingID: String) -> MeetingSpeakerMap? {
+        guard let dir = try? directory(for: meetingID) else { return nil }
+        let url = dir.appendingPathComponent("speakers.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(MeetingSpeakerMap.self, from: data)
+    }
+
     /// All saved recordings, newest first.
     public func allRecordings() -> [MeetingRecording] {
         let decoder = JSONDecoder()

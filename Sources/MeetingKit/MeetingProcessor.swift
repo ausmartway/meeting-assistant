@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Runs the heavy post-meeting pipeline from a saved `MeetingRecording`:
 /// transcribe both audio channels → fuse speaker labels → render and persist the
@@ -8,18 +9,23 @@ public final class MeetingProcessor {
     private let store: MeetingStore
     private let transcriber: Transcribing
     private let diarizer: Diarizing
-    private let enrollment: MeEnrollment?
+    /// A VALUE snapshot of the known-speaker library taken at construction time —
+    /// not the live, non-Sendable `SpeakerLibrary` — so background processing
+    /// never races the library being edited on another thread.
+    private let knownSpeakers: [KnownSpeaker]
+
+    private static let log = Logger(subsystem: "MeetingAssistant", category: "diarization")
 
     public init(
         store: MeetingStore,
         transcriber: Transcribing,
         diarizer: Diarizing = StubDiarizer(),
-        enrollment: MeEnrollment? = nil
+        knownSpeakers: [KnownSpeaker] = []
     ) {
         self.store = store
         self.transcriber = transcriber
         self.diarizer = diarizer
-        self.enrollment = enrollment
+        self.knownSpeakers = knownSpeakers
     }
 
     /// Progress callback for the UI: `fraction` is 0...1 during model download
@@ -56,19 +62,29 @@ public final class MeetingProcessor {
             outcome = try await diarizer.diarize(audioFile: micURL, progress: onProgress)
         } catch {
             outcome = DiarizationOutcome(spans: [], embeddings: [:])   // non-fatal — keep today's "Me" labeling
+            Self.log.error("Diarization failed, falling back to single speaker: \(error.localizedDescription, privacy: .public)")
         }
 
         // 2c. Fuse speaker labels (mic via diarization, system via the timeline).
-        //     Resolve diarized clusters to display labels. R5 will pass the real
-        //     known-speaker library snapshot; for now an empty list yields
-        //     anonymous "Speaker N" labels, preserving today's behavior.
-        let micLabels = SpeakerRecognizer.resolve(outcome: outcome, knownSpeakers: [])
+        //     Resolve diarized clusters to display labels against the known-speaker
+        //     library snapshot; unmatched clusters fall back to anonymous
+        //     "Speaker N" labels.
+        let micLabels = SpeakerRecognizer.resolve(outcome: outcome, knownSpeakers: knownSpeakers)
         let labeled = SpeakerFuser.fuse(
             segments: cleaned,
             timeline: recording.timeline,
             micDiarization: outcome.spans,
             micLabels: micLabels
         )
+
+        // 2d. Persist the per-meeting speaker map (cluster voiceprints + labels) so
+        //     speakers can be renamed later without re-diarizing. Best-effort.
+        if !outcome.spans.isEmpty {
+            try? store.saveSpeakerMap(
+                MeetingSpeakerMap(labelByCluster: micLabels, embeddingByCluster: outcome.embeddings),
+                for: recording.meeting.id
+            )
+        }
 
         // 3. Render with real wall-clock timestamps (baseDate = recording start) and
         //    a note recording how long transcription took.

@@ -56,7 +56,7 @@ struct MeetingProcessorDiarizationTests {
             store: store,
             transcriber: OneMicSegmentTranscriber(),
             diarizer: TwoSpeakerDiarizer(),
-            enrollment: nil
+            knownSpeakers: []
         )
         let transcript = try await processor.process(recording)
         #expect(transcript.contains("Speaker 2:"))
@@ -70,10 +70,37 @@ struct MeetingProcessorDiarizationTests {
             store: store,
             transcriber: OneMicSegmentTranscriber(),
             diarizer: FailingDiarizer(),
-            enrollment: nil
+            knownSpeakers: []
         )
         let transcript = try await processor.process(recording)
         #expect(transcript.contains("Me:"))
         #expect(!transcript.contains("Speaker 2:"))
+    }
+
+    @Test("processing persists the per-meeting speaker map")
+    func persistsSpeakerMap() async throws {
+        let (store, recording) = try makeRecording()
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: OneMicSegmentTranscriber(),
+            diarizer: TwoSpeakerDiarizer(),
+            knownSpeakers: []
+        )
+        _ = try await processor.process(recording)
+        let map = store.speakerMap(for: recording.meeting.id)
+        #expect(map?.labelByCluster["spk_a"] == "Speaker 2")
+        #expect(map?.embeddingByCluster["spk_a"] == [1, 0, 0])
+    }
+
+    @Test("MeetingSpeakerMap round-trips through the store")
+    func speakerMapRoundTrips() async throws {
+        let (store, recording) = try makeRecording()
+        let map = MeetingSpeakerMap(
+            labelByCluster: ["spk_a": "Alice", "spk_b": "Speaker 2"],
+            embeddingByCluster: ["spk_a": [0.1, 0.2, 0.3], "spk_b": [1, 0, 0]]
+        )
+        try store.saveSpeakerMap(map, for: recording.meeting.id)
+        let back = store.speakerMap(for: recording.meeting.id)
+        #expect(back == map)
     }
 }
