@@ -50,4 +50,34 @@ struct TranscriptFormatterTests {
         let md = TranscriptFormatter.transcriptBody(segments, baseDate: base, timeZone: utc)
         #expect(md == "**[00:00:00] Me:** first\n**[00:01:05] Alice:** later")
     }
+
+    // MARK: - document() — the full file that gets written to transcript.md and
+    // that the rename flow reads back and rewrites, so its shape is load-bearing.
+
+    private func meeting() -> Meeting {
+        Meeting(id: "m1", title: "Weekly Sync",
+                startDate: Date(timeIntervalSince1970: 0),
+                endDate: Date(timeIntervalSince1970: 3600),
+                provider: .zoom, joinURL: nil)
+    }
+
+    @Test("document() includes the title header, the note, and the transcript body")
+    func documentFull() {
+        let segs = [LabeledSegment(start: 0, end: 2, text: "Hi", speaker: "Me")]
+        let doc = TranscriptFormatter.document(
+            meeting: meeting(), segments: segs,
+            baseDate: Date(timeIntervalSince1970: 0), note: "Transcribed in 5s")
+        #expect(doc.hasPrefix("# Weekly Sync\n"))
+        #expect(doc.contains("_Transcribed in 5s_"))
+        #expect(doc.contains("Me:** Hi"))
+    }
+
+    @Test("document() still produces a valid titled file when there are no segments")
+    func documentEmpty() {
+        let doc = TranscriptFormatter.document(meeting: meeting(), segments: [])
+        #expect(doc.hasPrefix("# Weekly Sync\n"))
+        // No note line when none is supplied, and the body is empty — but the file
+        // is still well-formed (title + date), never nil/garbage.
+        #expect(!doc.contains("_"))
+    }
 }

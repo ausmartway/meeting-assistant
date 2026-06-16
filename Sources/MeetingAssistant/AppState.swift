@@ -389,8 +389,7 @@ final class AppState: ObservableObject {
             // Preserve the existing speaker's `isMe` flag: renaming a cluster to an
             // existing name (e.g. "Me") must not demote it to a regular speaker and
             // silently disable enrollment.
-            let isMe = settings.speakerLibrary.all()
-                .first { $0.name.lowercased() == newName.lowercased() }?.isMe ?? false
+            let isMe = KnownSpeaker.preservedIsMe(forName: newName, in: settings.speakerLibrary.all())
             try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: isMe)
             try? store.saveSpeakerMap(map, for: meetingID)
         }
