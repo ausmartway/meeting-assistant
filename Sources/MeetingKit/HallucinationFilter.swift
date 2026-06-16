@@ -53,6 +53,39 @@ public enum HallucinationFilter {
         let stripped = normalized.trimmingCharacters(in: CharacterSet(charactersIn: ".!?。！？"))
         if stockPhrases.contains(stripped) { return true }
 
+        // Whisper's repetition-loop failure mode: over music/silence/noise the
+        // decoder gets stuck emitting one token, producing walls of `$$$$$…` or
+        // `LAUGHTER LAUGHTER LAUGHTER …`. These are unreadable garbage, not speech.
+        if isDegenerateRepetition(trimmed) { return true }
+
+        return false
+    }
+
+    /// True when the text is a degenerate repetition artifact: a long run of one
+    /// repeated character, or a sequence of many words drawn from only one or two
+    /// distinct tokens. Thresholds are set so genuine speech ("Wait... what?",
+    /// "no no no") is never flagged.
+    static func isDegenerateRepetition(_ s: String) -> Bool {
+        // A run of 10+ identical characters never occurs in real speech but is the
+        // signature of the `$$$$…` walls. Short emphatic runs ("...", "!!!") stay.
+        var runChar: Character?
+        var runLength = 0
+        for ch in s {
+            if ch == runChar {
+                runLength += 1
+                if runLength >= 10 { return true }
+            } else {
+                runChar = ch
+                runLength = 1
+            }
+        }
+
+        // A word-loop: 6+ whitespace-separated tokens but only one or two distinct
+        // ones (case-insensitive). "no no no" (3 tokens) and normal sentences (many
+        // distinct tokens) fall well outside this.
+        let tokens = s.split(whereSeparator: { $0.isWhitespace }).map { $0.lowercased() }
+        if tokens.count >= 6 && Set(tokens).count <= 2 { return true }
+
         return false
     }
 

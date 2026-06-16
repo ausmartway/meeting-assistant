@@ -43,6 +43,43 @@ struct HallucinationFilterTests {
         #expect(out.map(\.text) == ["First point", "Second point", "Third point"])
     }
 
+    @Test("drops degenerate single-character repetition walls like $$$$$…")
+    func dropsCharacterRunWalls() {
+        let input = [
+            seg(String(repeating: "$", count: 200)),
+            seg(String(repeating: "-", count: 40)),
+            seg("Real discussion about the roadmap"),
+        ]
+        let out = HallucinationFilter.clean(input)
+        #expect(out.map(\.text) == ["Real discussion about the roadmap"])
+    }
+
+    @Test("keeps short, legitimate punctuation runs like ellipses")
+    func keepsShortPunctuationRuns() {
+        let input = [seg("Wait... what?"), seg("Whoa!!!"), seg("hmm---")]
+        let out = HallucinationFilter.clean(input)
+        #expect(out.map(\.text) == ["Wait... what?", "Whoa!!!", "hmm---"])
+    }
+
+    @Test("drops word-repetition loops like LAUGHTER LAUGHTER LAUGHTER…")
+    func dropsWordRepetitionLoops() {
+        let input = [
+            seg(Array(repeating: "LAUGHTER", count: 8).joined(separator: " ")),
+            seg(Array(repeating: "you", count: 12).joined(separator: " ")),
+            seg(Array(repeating: "thank you", count: 6).joined(separator: " ")),
+            seg("And then we shipped the feature"),
+        ]
+        let out = HallucinationFilter.clean(input)
+        #expect(out.map(\.text) == ["And then we shipped the feature"])
+    }
+
+    @Test("keeps short emphatic repetition like 'no no no'")
+    func keepsShortEmphaticRepetition() {
+        let input = [seg("no no no"), seg("yeah yeah yeah yeah"), seg("Milk coffee. Milk coffee.")]
+        let out = HallucinationFilter.clean(input)
+        #expect(out.map(\.text) == ["no no no", "yeah yeah yeah yeah", "Milk coffee. Milk coffee."])
+    }
+
     @Test("drops common Mandarin whisper hallucinations, incl. trailing CJK punctuation")
     func dropsMandarinHallucinations() {
         let input = [
