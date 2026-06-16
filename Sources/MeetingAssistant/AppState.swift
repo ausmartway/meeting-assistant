@@ -366,6 +366,48 @@ final class AppState: ObservableObject {
         store.transcriptURL(for: recording.meeting.id)
     }
 
+    // MARK: - Speakers
+
+    /// Distinct speaker labels detected in a meeting (from its persisted speaker
+    /// map), sorted for stable display. Empty if the meeting wasn't diarized.
+    func meetingSpeakers(for recording: MeetingRecording) -> [String] {
+        guard let map = store.speakerMap(for: recording.meeting.id) else { return [] }
+        return Array(Set(map.labelByCluster.values)).sorted()
+    }
+
+    /// The known speakers in the shared library (for Settings management).
+    func knownSpeakers() -> [KnownSpeaker] { settings.speakerLibrary.all() }
+
+    /// Rename a known speaker in the library (Settings). Does not rewrite past
+    /// transcripts — only affects future recognition and the library listing.
+    func renameKnownSpeaker(id: UUID, to newName: String) {
+        try? settings.speakerLibrary.rename(id: id, to: newName)
+        objectWillChange.send()
+    }
+
+    /// Remove a known speaker from the library (Settings).
+    func deleteKnownSpeaker(id: UUID) {
+        try? settings.speakerLibrary.delete(id: id)
+        objectWillChange.send()
+    }
+
+    /// Enroll (or re-enroll) the local user "Me" from a clip of them reading the
+    /// enrollment script: extract the voiceprint and store it in the library.
+    /// Returns true on success. Best-effort: returns false if no voice was found.
+    func enrollMe(audioFile: URL) async -> Bool {
+        do {
+            guard let embedding = try await diarizer.enrollmentEmbedding(audioFile: audioFile) else {
+                return false
+            }
+            try settings.speakerLibrary.upsert(name: "Me", embedding: embedding, isMe: true)
+            objectWillChange.send()
+            return true
+        } catch {
+            lastError = userFacingMessage(for: .transcribing, error: error)
+            return false
+        }
+    }
+
     /// The meeting currently being recorded or processed, if any.
     private var activeMeetingID: String? {
         switch status {
