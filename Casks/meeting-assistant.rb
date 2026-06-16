@@ -36,6 +36,7 @@ cask "meeting-assistant" do
 
       brew install --cask --no-quarantine meeting-assistant
 
-    The app lives in your menu bar and opens a setup window on first launch.
+    On first launch the app opens its main window (with a Dock and menu-bar icon)
+    and walks you through a short setup.
   EOS
 end
