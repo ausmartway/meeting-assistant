@@ -96,6 +96,10 @@ final class AppState: ObservableObject {
     /// downloaded/loaded exactly once (at launch) rather than per meeting.
     private var transcriber: Transcribing
 
+    /// Shared on-device diarizer, warmed up alongside the transcriber so in-room
+    /// speaker separation doesn't pay the model load cost on the first meeting.
+    private var diarizer: Diarizing
+
     init() {
         let calendar = CalendarWatcher()
         self.calendar = calendar
@@ -110,6 +114,7 @@ final class AppState: ObservableObject {
             model: settings.transcriptionModel,
             workers: settings.transcriptionWorkers
         )
+        self.diarizer = Backends.makeDiarizer()
         // Re-publish permission changes so onboarding/menu views observing AppState
         // update live as the user grants each capability.
         permissions.objectWillChange
@@ -176,6 +181,12 @@ final class AppState: ObservableObject {
         }
         do {
             try await transcriber.prepare(progress: tHandler)
+            // Best-effort: warm up the diarizer too when in-room identification is
+            // enabled, so the first meeting doesn't pay the model load cost. A
+            // failure here must not block transcription, which works without it.
+            if settings.identifyInRoomSpeakers {
+                try? await diarizer.prepare(progress: tHandler)
+            }
             modelReady = true
             modelStatusText = "Model ready"
         } catch {
@@ -280,7 +291,13 @@ final class AppState: ObservableObject {
             status = .idle
             return
         }
-        let processor = MeetingProcessor(store: store, transcriber: transcriber)
+        let useDiar = settings.identifyInRoomSpeakers
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: transcriber,
+            diarizer: useDiar ? diarizer : StubDiarizer(),
+            knownSpeakers: useDiar ? settings.speakerLibrary.all() : []
+        )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
                 self?.progressFraction = fraction
@@ -311,6 +328,37 @@ final class AppState: ObservableObject {
 
     func transcript(for recording: MeetingRecording) -> String? {
         store.transcript(for: recording.meeting.id)
+    }
+
+    /// Rename a speaker in a saved transcript. Rewrites the transcript text and,
+    /// when the meeting has a persisted speaker map, teaches the shared library the
+    /// new name for that cluster's voiceprint so the person is recognized in future
+    /// meetings. Best-effort: a missing map just rewrites the text.
+    @MainActor
+    func renameSpeaker(in recording: MeetingRecording, from oldLabel: String, to newName: String) {
+        let meetingID = recording.meeting.id
+        let map = store.speakerMap(for: meetingID)
+
+        // 1. Rewrite the rendered transcript's labels.
+        guard let current = store.transcript(for: meetingID) else { return }
+        let updated = TranscriptRelabeler.rename(in: current, from: oldLabel, to: newName)
+        try? store.saveTranscript(updated, for: meetingID)
+
+        // 2. If we have a speaker map, learn the voiceprint under the new name and
+        //    update the map's label so a later rename starts from the right place.
+        if var map {
+            if let cluster = map.labelByCluster.first(where: { $0.value == oldLabel })?.key {
+                if let embedding = map.embeddingByCluster[cluster] {
+                    try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: false)
+                }
+                map.labelByCluster[cluster] = newName
+                try? store.saveSpeakerMap(map, for: meetingID)
+            }
+        }
+
+        // Transcripts are read on demand via `transcript(for:)`, so a generic
+        // change notification is enough to refresh any view showing one.
+        objectWillChange.send()
     }
 
     /// On-disk transcript file, for "Reveal in Finder".
