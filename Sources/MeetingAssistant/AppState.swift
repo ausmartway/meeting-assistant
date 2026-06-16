@@ -130,6 +130,13 @@ final class AppState: ObservableObject {
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
+        // Same for settings: views observe AppState, not the nested AppSettings
+        // object, so without this a Settings toggle (e.g. "Identify multiple
+        // in-room speakers") would write through but never visually update.
+        settings.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
         // Screen Recording / Accessibility are granted in System Settings, outside
         // the app. Re-check permissions whenever the user switches back so the
         // onboarding checklist updates the moment they return.
