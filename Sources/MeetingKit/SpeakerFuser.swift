@@ -17,6 +17,11 @@ import Foundation
 /// the segment gets a generic fallback label.
 public enum SpeakerFuser {
 
+    /// `micDiarization` and `micLabels` are co-derived and must travel together:
+    /// `micLabels` maps the cluster ids in `micDiarization` to display names (from
+    /// `SpeakerRecognizer.resolve`). Passing spans without their labels makes every
+    /// mic segment silently fall back to `micLabel`, flattening distinct speakers —
+    /// so always supply both, or neither.
     public static func fuse(
         segments: [TranscriptSegment],
         timeline: SpeakerTimeline,

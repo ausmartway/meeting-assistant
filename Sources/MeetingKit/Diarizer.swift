@@ -5,8 +5,9 @@ import Foundation
 public struct DiarizedSpan: Codable, Sendable, Equatable {
     public let start: TimeInterval     // seconds from meeting start
     public let end: TimeInterval
-    /// The diarizer's speaker id. The literal "Me" marks the span as matched to
-    /// the enrolled local user; any other string is an anonymous in-room speaker.
+    /// The raw cluster id the diarizer assigned (e.g. "1", "2"). It is opaque and
+    /// anonymous — display names ("Me", "Sam", "Speaker 2") are resolved later by
+    /// `SpeakerRecognizer` against the speaker library, never emitted here.
     public let speakerID: String
 
     public init(start: TimeInterval, end: TimeInterval, speakerID: String) {
