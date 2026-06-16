@@ -55,8 +55,15 @@ public final class MeetingDetector {
     /// (within a small grace window) and its client is running.
     public func shouldAutoStart(_ meeting: Meeting, now: Date = Date(), grace: TimeInterval = 120) -> Bool {
         guard let provider = meeting.provider else { return false }
-        let started = now >= meeting.startDate.addingTimeInterval(-grace)
-        let notEndedYet = now < meeting.endDate
-        return started && notEndedYet && isMeetingAppRunning(for: provider)
+        return Self.isWithinWindow(meeting, now: now, grace: grace)
+            && isMeetingAppRunning(for: provider)
+    }
+
+    /// Pure time-window half of the auto-start decision: the meeting has started
+    /// (within `grace` seconds before its start time) and has not yet ended.
+    /// Separated from the `NSWorkspace` running-app check so the auto-start timing
+    /// — the app's headline behavior — is unit-testable.
+    static func isWithinWindow(_ meeting: Meeting, now: Date, grace: TimeInterval) -> Bool {
+        now >= meeting.startDate.addingTimeInterval(-grace) && now < meeting.endDate
     }
 }

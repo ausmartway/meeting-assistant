@@ -16,6 +16,15 @@ public struct KnownSpeaker: Codable, Sendable, Identifiable, Equatable {
         self.embedding = embedding
         self.updatedAt = updatedAt
     }
+
+    /// When renaming a meeting speaker to `name`, the `isMe` flag the upsert should
+    /// carry: preserve an existing known speaker's flag (case-insensitive) so
+    /// renaming a cluster to "Me" can't silently demote the enrolled user and
+    /// disable diarization; `false` for a brand-new name. Pure, so the rename flow's
+    /// most consequential invariant is unit-testable.
+    public static func preservedIsMe(forName name: String, in known: [KnownSpeaker]) -> Bool {
+        known.first { $0.name.lowercased() == name.lowercased() }?.isMe ?? false
+    }
 }
 
 /// Locally-persisted set of known speakers, stored as JSON. Loaded on init
