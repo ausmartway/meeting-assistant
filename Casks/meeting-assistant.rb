@@ -1,6 +1,6 @@
 cask "meeting-assistant" do
-  version "0.3.0"
-  sha256 "65ec42781989336187d7c5dbfaf0f8c11be5d6425ebd407f0c6597de6eaf7bc2"
+  version "0.4.0"
+  sha256 "d23f3a319ec400bd9895d9d0774c9bbb9527b7bc0f52a93af9c07331a6b01a0e"
 
   url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg",
       verified: "github.com/ausmartway/meeting-assistant/"
@@ -10,7 +10,7 @@ cask "meeting-assistant" do
 
   # macOS 14 (Sonoma) is the floor: EventKit full-access, ScreenCaptureKit audio,
   # and the Vision OCR APIs the app relies on.
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Meeting Assistant.app"
 
