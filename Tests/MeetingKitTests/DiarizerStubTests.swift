@@ -27,12 +27,11 @@ struct DiarizerStubTests {
     @Test("StubDiarizer returns no spans so callers fall back to 'Me'")
     func stubReturnsEmpty() async throws {
         let stub = StubDiarizer()
-        let spans = try await stub.diarize(
+        let outcome = try await stub.diarize(
             audioFile: URL(fileURLWithPath: "/tmp/none.wav"),
-            enrollment: nil,
             progress: nil
         )
-        #expect(spans.isEmpty)
+        #expect(outcome.spans.isEmpty && outcome.embeddings.isEmpty)
     }
 
     @Test("Backends.makeDiarizer returns a diarizer and exposes the capability flag")

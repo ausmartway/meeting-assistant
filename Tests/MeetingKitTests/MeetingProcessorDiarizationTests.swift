@@ -18,8 +18,9 @@ struct MeetingProcessorDiarizationTests {
     // A diarizer that splits the timeline into another speaker (not "Me").
     private struct TwoSpeakerDiarizer: Diarizing {
         func prepare(progress: TranscribeProgressHandler?) async throws {}
-        func diarize(audioFile: URL, enrollment: MeEnrollment?, progress: TranscribeProgressHandler?) async throws -> [DiarizedSpan] {
-            [DiarizedSpan(start: 0, end: 5, speakerID: "spk_a")]   // not "Me" -> Speaker 2
+        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws -> DiarizationOutcome {
+            DiarizationOutcome(spans: [DiarizedSpan(start: 0, end: 5, speakerID: "spk_a")],
+                               embeddings: ["spk_a": [1, 0, 0]])   // not "Me" -> Speaker 2
         }
     }
 
@@ -27,7 +28,7 @@ struct MeetingProcessorDiarizationTests {
     private struct FailingDiarizer: Diarizing {
         struct Boom: Error {}
         func prepare(progress: TranscribeProgressHandler?) async throws {}
-        func diarize(audioFile: URL, enrollment: MeEnrollment?, progress: TranscribeProgressHandler?) async throws -> [DiarizedSpan] {
+        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws -> DiarizationOutcome {
             throw Boom()
         }
     }

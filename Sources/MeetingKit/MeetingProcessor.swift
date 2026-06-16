@@ -51,20 +51,18 @@ public final class MeetingProcessor {
 
         // 2b. Diarize the mic channel so multiple in-room speakers are separated.
         //     Best-effort: any failure degrades to blanket "Me" (empty spans).
-        var micSpans: [DiarizedSpan] = []
+        var outcome = DiarizationOutcome(spans: [], embeddings: [:])
         do {
-            micSpans = try await diarizer.diarize(
-                audioFile: micURL, enrollment: enrollment, progress: onProgress
-            )
+            outcome = try await diarizer.diarize(audioFile: micURL, progress: onProgress)
         } catch {
-            micSpans = []   // non-fatal — keep today's "Me" labeling
+            outcome = DiarizationOutcome(spans: [], embeddings: [:])   // non-fatal — keep today's "Me" labeling
         }
 
         // 2c. Fuse speaker labels (mic via diarization, system via the timeline).
         let labeled = SpeakerFuser.fuse(
             segments: cleaned,
             timeline: recording.timeline,
-            micDiarization: micSpans
+            micDiarization: outcome.spans
         )
 
         // 3. Render with real wall-clock timestamps (baseDate = recording start) and

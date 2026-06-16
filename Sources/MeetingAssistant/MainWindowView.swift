@@ -107,6 +107,43 @@ struct MainWindowView: View {
                 )
             }
         }
+        // A record control in the title bar so recording can be started/stopped
+        // with the window open — not only from the menu bar.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { recordControl }
+        }
+    }
+
+    /// State-aware record control for the window toolbar. Mirrors the menu bar's
+    /// Start/Stop so the two stay in lockstep: Record → Stop & Process → progress.
+    @ViewBuilder
+    private var recordControl: some View {
+        switch state.status {
+        case .recording:
+            Button(role: .destructive) {
+                Task { await state.stopCapture() }
+            } label: {
+                Label("Stop & Process", systemImage: "stop.circle")
+            }
+            .help("Stop recording and make the transcript")
+        case .processing:
+            // Non-interactive while post-processing runs; matches the menu bar.
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(state.progressPhase ?? "Processing…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .idle:
+            // Recording can begin before the model finishes downloading —
+            // capture is independent of it and processing waits — so this stays
+            // enabled regardless of model readiness (same as the menu bar).
+            Button {
+                Task { await state.startAdHocCapture() }
+            } label: {
+                Label("Record", systemImage: "record.circle")
+            }
+            .help("Start recording a meeting now")
+        }
     }
 
     /// Shown when there are no recordings yet — a real empty state with a clear
