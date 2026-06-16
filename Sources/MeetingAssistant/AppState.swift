@@ -291,7 +291,11 @@ final class AppState: ObservableObject {
             status = .idle
             return
         }
-        let useDiar = settings.identifyInRoomSpeakers
+        // Diarization requires the user to have enrolled their voice — otherwise
+        // their own mic audio would be split off as "Speaker 2" instead of "Me",
+        // a worse result than today's blanket "Me". Without enrollment we fall back
+        // to the stub (blanket "Me"), matching pre-feature behavior.
+        let useDiar = settings.identifyInRoomSpeakers && settings.speakerLibrary.me != nil
         let processor = MeetingProcessor(
             store: store,
             transcriber: transcriber,

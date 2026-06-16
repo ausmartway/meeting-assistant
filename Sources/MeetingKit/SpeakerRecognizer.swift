@@ -8,7 +8,7 @@ public enum SpeakerRecognizer {
 
     /// Conservative default: only label a cluster with a known name when the
     /// voiceprint is clearly close, so we don't put the wrong name on someone.
-    public static let defaultThreshold: Float = 0.45
+    public static let defaultThreshold: Float = 0.40
 
     /// Returns clusterID → display label ("Me", "Sam", "Speaker 2", …).
     public static func resolve(
