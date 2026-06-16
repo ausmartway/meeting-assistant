@@ -80,6 +80,14 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Voice enrollment lives in Settings → Speakers; surface it here so
+            // it's reachable without hunting (the menu bar has no app menu).
+            SettingsLink {
+                Label(state.settings.isEnrolled ? "Settings (voice enrolled)" : "Set Up My Voice…",
+                      systemImage: "person.wave.2")
+            }
+            .font(.callout)
+
             HStack {
                 Button("Show Transcripts") { openWindow(id: "main") }
                 Spacer()
