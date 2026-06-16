@@ -155,4 +155,16 @@ public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
         self.labelByCluster = labelByCluster
         self.embeddingByCluster = embeddingByCluster
     }
+
+    /// Relabel the cluster currently shown as `oldLabel` to `newLabel`, returning
+    /// that cluster's voiceprint so the caller can teach it to the speaker library.
+    /// Returns nil (and changes nothing) if no cluster carries `oldLabel`. Pure, so
+    /// the rename → relearn flow is unit-testable without `AppState`.
+    public mutating func relabel(from oldLabel: String, to newLabel: String) -> [Float]? {
+        guard let cluster = labelByCluster.first(where: { $0.value == oldLabel })?.key else {
+            return nil
+        }
+        labelByCluster[cluster] = newLabel
+        return embeddingByCluster[cluster]
+    }
 }

@@ -22,4 +22,8 @@ struct VoiceMatchTests {
         #expect(VoiceMatch.cosineDistance([], []) == .infinity)
         #expect(VoiceMatch.cosineDistance([0, 0], [1, 1]) == .infinity)
     }
+    @Test("mismatched non-empty lengths return infinity (no match)")
+    func lengthMismatch() {
+        #expect(VoiceMatch.cosineDistance([1, 0], [1, 0, 0]) == .infinity)
+    }
 }

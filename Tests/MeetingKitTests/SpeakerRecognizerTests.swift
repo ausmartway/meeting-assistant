@@ -52,4 +52,16 @@ struct SpeakerRecognizerTests {
         #expect(labels["c0"] == "Me")
         #expect(labels["c1"] == "Speaker 2")
     }
+
+    @Test("a known name is given to only the closest cluster; the rest go anonymous")
+    func dedupKnownName() {
+        // Two clusters both near "Sam"; c1 is closer (exact), c0 is slightly off.
+        let lib = [known("Sam", [1, 0, 0])]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [0.9, 0.1, 0]), ("c1", [1, 0, 0])]),
+            knownSpeakers: lib, threshold: 0.3)
+        #expect(labels.values.filter { $0 == "Sam" }.count == 1)
+        #expect(labels["c1"] == "Sam")        // closer cluster wins the name
+        #expect(labels["c0"] == "Speaker 2")  // the other falls back to anonymous
+    }
 }

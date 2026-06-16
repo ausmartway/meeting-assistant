@@ -177,6 +177,7 @@ private struct EnrollmentRow: View {
     @EnvironmentObject private var state: AppState
     @StateObject private var enroller = EnrollmentRecorder()
     @State private var showScript = false
+    @State private var enrollmentFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -191,8 +192,11 @@ private struct EnrollmentRow: View {
                 Spacer()
                 if enroller.isRecording {
                     Button("Stop") { enroller.stop() }
+                } else if state.isEnrolling {
+                    ProgressView().controlSize(.small)
                 } else {
                     Button(state.settings.isEnrolled ? "Re-record" : "Record my voice") {
+                        enrollmentFailed = false
                         showScript = true
                         startRecording()
                     }
@@ -212,6 +216,15 @@ private struct EnrollmentRow: View {
                     }
                 }
             }
+
+            if state.isEnrolling {
+                Text(state.modelStatusText ?? "Processing your voice…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if enrollmentFailed {
+                Text("That recording didn't work. Please try again in a quiet spot.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
         }
     }
 
@@ -221,10 +234,13 @@ private struct EnrollmentRow: View {
         enroller.record(to: url) { result in
             if case .success(let recorded) = result {
                 Task {
-                    _ = await state.enrollMe(audioFile: recorded)
+                    let ok = await state.enrollMe(audioFile: recorded)
+                    enrollmentFailed = !ok
                     showScript = false
+                    try? FileManager.default.removeItem(at: recorded)
                 }
             } else {
+                enrollmentFailed = true
                 showScript = false
             }
         }

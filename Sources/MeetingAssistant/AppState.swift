@@ -55,6 +55,11 @@ final class AppState: ObservableObject {
     /// so it never shows before the first attempt.
     @Published private(set) var modelFailed = false
 
+    /// True while a voice enrollment is being processed (extracting the voiceprint,
+    /// which may trigger a one-time diarization-model download). Drives a "working"
+    /// state in the enrollment UI so it isn't silently frozen.
+    @Published private(set) var isEnrolling = false
+
     let settings: AppSettings
     let permissions: Permissions
     private let calendar: CalendarWatcher
@@ -350,14 +355,14 @@ final class AppState: ObservableObject {
 
         // 2. If we have a speaker map, learn the voiceprint under the new name and
         //    update the map's label so a later rename starts from the right place.
-        if var map {
-            if let cluster = map.labelByCluster.first(where: { $0.value == oldLabel })?.key {
-                if let embedding = map.embeddingByCluster[cluster] {
-                    try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: false)
-                }
-                map.labelByCluster[cluster] = newName
-                try? store.saveSpeakerMap(map, for: meetingID)
-            }
+        if var map, let embedding = map.relabel(from: oldLabel, to: newName) {
+            // Preserve the existing speaker's `isMe` flag: renaming a cluster to an
+            // existing name (e.g. "Me") must not demote it to a regular speaker and
+            // silently disable enrollment.
+            let isMe = settings.speakerLibrary.all()
+                .first { $0.name.lowercased() == newName.lowercased() }?.isMe ?? false
+            try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: isMe)
+            try? store.saveSpeakerMap(map, for: meetingID)
         }
 
         // Transcripts are read on demand via `transcript(for:)`, so a generic
@@ -399,7 +404,16 @@ final class AppState: ObservableObject {
     /// enrollment script: extract the voiceprint and store it in the library.
     /// Returns true on success. Best-effort: returns false if no voice was found.
     func enrollMe(audioFile: URL) async -> Bool {
+        isEnrolling = true
+        defer { isEnrolling = false }
         do {
+            // Warm the model with progress first: the very first enrollment may pull
+            // a multi-hundred-MB CoreML model, which would otherwise freeze the UI
+            // with no feedback.
+            let onProgress: TranscribeProgressHandler = { [weak self] p in
+                Task { @MainActor in self?.modelStatusText = p.phase }
+            }
+            try await diarizer.prepare(progress: onProgress)
             guard let embedding = try await diarizer.enrollmentEmbedding(audioFile: audioFile) else {
                 return false
             }

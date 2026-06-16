@@ -116,6 +116,11 @@ struct OnboardingView: View {
                         Spacer()
                         Button("Stop") { enroller.stop() }
                             .buttonStyle(.borderedProminent)
+                    } else if state.isEnrolling {
+                        ProgressView().controlSize(.small)
+                        Text(state.modelStatusText ?? "Processing your voice\u{2026}")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
                     } else {
                         Text("Find a quiet spot, then read the paragraph aloud.")
                             .font(.callout).foregroundStyle(.secondary)
@@ -145,6 +150,7 @@ struct OnboardingView: View {
                 Task {
                     let ok = await state.enrollMe(audioFile: fileURL)
                     if !ok { enrollmentFailed = true }
+                    try? FileManager.default.removeItem(at: fileURL)
                 }
             case .failure:
                 enrollmentFailed = true
