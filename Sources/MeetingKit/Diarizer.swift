@@ -56,6 +56,15 @@ public protocol Diarizing: Sendable {
         audioFile: URL,
         progress: TranscribeProgressHandler?
     ) async throws -> DiarizationOutcome
+
+    /// Compute the dominant speaker's voiceprint from a short enrollment clip
+    /// (the user reading a script), for registering "Me" / a known speaker.
+    /// Returns nil when no usable voice is found. Default implementation returns nil.
+    func enrollmentEmbedding(audioFile: URL) async throws -> [Float]?
+}
+
+public extension Diarizing {
+    func enrollmentEmbedding(audioFile: URL) async throws -> [Float]? { nil }
 }
 
 /// No-ML placeholder. Returns no spans, so the fuser keeps today's mic = "Me".
@@ -118,6 +127,12 @@ public actor FluidAudioDiarizer: Diarizing {
                          speakerID: $0.speakerId)
         }
         return DiarizationOutcome(spans: spans, embeddings: result.speakerDatabase ?? [:])
+    }
+
+    public func enrollmentEmbedding(audioFile: URL) async throws -> [Float]? {
+        let mgr = try await manager(progress: nil)
+        let result = try await mgr.process(audioFile)
+        return Self.dominantSpeakerEmbedding(result)
     }
 
     /// The centroid embedding of the speaker who talks the most in a result —
