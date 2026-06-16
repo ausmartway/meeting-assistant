@@ -81,6 +81,31 @@ jobs:
           chmod +x Scripts/*.sh
           ./Scripts/make-dmg.sh
 
+      - name: Verify code signature
+        # A valid signature must hold. And when a real signing cert is configured,
+        # the build must NOT have silently fallen back to ad-hoc — that would break
+        # TCC-grant persistence across updates (a green build hiding a regression).
+        env:
+          CODESIGN_P12_BASE64: ${{ secrets.CODESIGN_P12_BASE64 }}
+        run: |
+          APP="build/Meeting Assistant.app"
+          codesign --verify --strict --deep --verbose=2 "$APP"
+          if [ -n "$CODESIGN_P12_BASE64" ] && codesign -dvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
+            echo "::error::A signing cert is configured but the app is ad-hoc signed — TCC grants would reset on update."
+            exit 1
+          fi
+
+      - name: Smoke-test the DMG
+        # Catch a broken bundle/icon before users ever download it: mount the DMG,
+        # confirm the app and its icon are inside, and the bundle verifies.
+        run: |
+          MNT="$(mktemp -d)"
+          hdiutil attach build/MeetingAssistant.dmg -mountpoint "$MNT" -nobrowse -quiet
+          test -d "$MNT/Meeting Assistant.app" || { echo "::error::app missing from DMG"; exit 1; }
+          test -f "$MNT/Meeting Assistant.app/Contents/Resources/AppIcon.icns" || { echo "::error::app icon missing"; exit 1; }
+          codesign --verify --strict "$MNT/Meeting Assistant.app"
+          hdiutil detach "$MNT" -quiet
+
       # --- Notarization (add when you have an Apple Developer ID) --------------
       # Self-signed builds are not notarized, so first launch still needs
       # System Settings → Privacy & Security → Open Anyway. With a Developer ID:
@@ -140,6 +165,17 @@ jobs:
           git checkout main
           sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" Casks/meeting-assistant.rb
           sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/meeting-assistant.rb
+
+          # Fail loudly if the sed didn't land (e.g. the stanza format changed):
+          # a silent no-op would ship a cask with the wrong sha256 and break
+          # `brew install` for every user behind a green build.
+          grep -q "  version \"${VERSION}\"" Casks/meeting-assistant.rb \
+            || { echo "::error::Cask version not updated to ${VERSION}"; exit 1; }
+          grep -q "  sha256 \"${SHA}\"" Casks/meeting-assistant.rb \
+            || { echo "::error::Cask sha256 not updated"; exit 1; }
+          # Lint the cask so a malformed stanza can't ship.
+          brew style Casks/meeting-assistant.rb
+
           if git diff --quiet Casks/meeting-assistant.rb; then
             echo "Cask already current."
           else
