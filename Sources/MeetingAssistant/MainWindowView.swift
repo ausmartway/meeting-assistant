@@ -30,8 +30,8 @@ struct MainWindowView: View {
             .listStyle(.sidebar)
             .navigationTitle("Meeting Assistant")
             .frame(minWidth: 248)
-            // Large, always-visible primary action anchored to the sidebar.
-            .safeAreaInset(edge: .bottom) {
+            // Large, always-visible primary action anchored to the top of the sidebar.
+            .safeAreaInset(edge: .top) {
                 recordButton
                     .padding(Theme.Space.s)
                     .background(.bar)
