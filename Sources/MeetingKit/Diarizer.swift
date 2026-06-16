@@ -115,10 +115,13 @@ public actor FluidAudioDiarizer: Diarizing {
         let result = try await mgr.process(audioFile)
 
         // Optionally figure out which anonymous speaker is the enrolled user.
+        // Matching is best-effort: a silent/unreadable enrollment clip must NOT
+        // discard the already-computed in-room separation, so `try?` collapses any
+        // failure (or no confident match) into "nobody labeled Me".
         var meSpeakerID: String? = nil
         if let enrollment {
             progress?(TranscribeProgress(fraction: nil, phase: "Matching your voice…"))
-            meSpeakerID = try await matchEnrolledSpeaker(
+            meSpeakerID = try? await matchEnrolledSpeaker(
                 manager: mgr,
                 enrollment: enrollment,
                 meetingSpeakers: result.speakerDatabase
