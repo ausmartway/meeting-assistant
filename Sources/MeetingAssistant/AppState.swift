@@ -4,23 +4,6 @@ import AppKit
 import UserNotifications
 import MeetingKit
 
-/// What the app is currently doing, surfaced in the menu bar.
-enum CaptureStatus: Equatable {
-    case idle
-    case recording(Meeting)
-    case processing(Meeting)
-
-    /// Friendly, plain-English status — "Idle" reads as "off" for an app that is
-    /// actively watching the calendar, so the idle state says what it's doing.
-    var label: String {
-        switch self {
-        case .idle: return "Watching for meetings"
-        case .recording(let m): return "Recording: \(m.title)"
-        case .processing(let m): return "Making transcript: \(m.title)"
-        }
-    }
-}
-
 /// The app coordinator: owns the calendar/detector/capture/processor wiring and
 /// the observable state the UI renders. Runs the "calendar AND app detected"
 /// auto-start loop, manages a single capture session, and kicks off
@@ -35,7 +18,28 @@ final class AppState: ObservableObject {
     /// so non-view code (a Dock click when the menu-bar icon is hidden) can bring
     /// the main window forward.
     var openMainWindow: (() -> Void)?
-    @Published private(set) var status: CaptureStatus = .idle
+    /// The meeting currently being recorded, or nil. Recording is single (one mic
+    /// + screen at a time) but runs INDEPENDENTLY of transcription, so a new
+    /// recording can start while earlier meetings are still being transcribed.
+    @Published private(set) var recording: Meeting?
+
+    /// The serial transcription queue: the meeting being transcribed plus any
+    /// waiting behind it. Drains in the background while recording continues.
+    @Published private(set) var processing = ProcessingQueue()
+
+    /// One-line, plain-English summary of everything in flight, for the menu bar.
+    var statusSummary: String {
+        var parts: [String] = []
+        if let r = recording { parts.append("Recording: \(r.title)") }
+        if let p = processing.current {
+            let q = processing.pendingCount
+            parts.append("Making transcript: \(p.title)" + (q > 0 ? " (\(q) queued)" : ""))
+        }
+        return parts.isEmpty ? "Watching for meetings" : parts.joined(separator: " · ")
+    }
+
+    /// True while a capture session is active (drives the record/stop control).
+    var isRecording: Bool { recording != nil }
     @Published private(set) var upcoming: [Meeting] = []
     @Published private(set) var recordings: [MeetingRecording] = []
     @Published var lastError: String?
@@ -67,6 +71,8 @@ final class AppState: ObservableObject {
     private let store: MeetingStore
 
     private var capture: CaptureSession?
+    /// The background task draining the transcription queue, nil when idle.
+    private var drainTask: Task<Void, Never>?
     private var pollTimer: Timer?
     private var notifiedMeetingIDs: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
@@ -90,11 +96,9 @@ final class AppState: ObservableObject {
     /// what the app is doing (a filled record dot while recording).
     var menuBarSymbol: String {
         guard setup.isComplete else { return "exclamationmark.triangle.fill" }
-        switch status {
-        case .idle: return "waveform"
-        case .recording: return "record.circle.fill"
-        case .processing: return "gearshape.2"
-        }
+        if recording != nil { return "record.circle.fill" }
+        if processing.current != nil { return "gearshape.2" }
+        return "waveform"
     }
 
     /// Shared, prepared transcriber reused across all processing so the model is
@@ -205,7 +209,9 @@ final class AppState: ObservableObject {
 
     private func tick() {
         refreshUpcoming()
-        guard case .idle = status else { return }
+        // Auto-start only gates on whether we're already recording — transcription
+        // of a previous meeting runs independently and must not block a new one.
+        guard recording == nil else { return }
         for meeting in upcoming where detector.shouldAutoStart(meeting) {
             notifyAndStart(meeting)
             break
@@ -254,7 +260,7 @@ final class AppState: ObservableObject {
     /// for a meeting that isn't (or isn't yet) on their calendar. Labels it with
     /// the detected provider when a native client is running.
     func startAdHocCapture() async {
-        guard case .idle = status else { return }
+        guard recording == nil else { return }
         let provider = detector.firstRunningProvider()
         let meeting = Meeting.adHoc(id: "adhoc-\(UUID().uuidString)", provider: provider, start: Date())
         await startCapture(for: meeting)
@@ -262,38 +268,57 @@ final class AppState: ObservableObject {
 
     /// Start capturing a meeting (also the manual Start action).
     func startCapture(for meeting: Meeting) async {
-        guard case .idle = status else { return }
+        guard recording == nil else { return }
         lastError = nil
         let session = CaptureSession(meeting: meeting, store: store)
         do {
             try await session.start()
             capture = session
-            status = .recording(meeting)
+            recording = meeting
         } catch {
             lastError = userFacingMessage(for: .startRecording, error: error)
         }
     }
 
-    /// Stop the active capture and run post-processing.
+    /// Stop the active capture and hand the meeting to the transcription queue.
+    /// Returns immediately so the user can start recording again right away;
+    /// transcription drains serially in the background.
     func stopCapture() async {
-        guard case .recording(let meeting) = status, let session = capture else { return }
+        guard let meeting = recording, let session = capture else { return }
         do {
             try await session.stop()
             capture = nil
-            status = .processing(meeting)
-            await process(meeting)
+            recording = nil
+            processing.enqueue(meeting)
+            recordings = store.allRecordings()
+            drainProcessingQueue()
         } catch {
             lastError = userFacingMessage(for: .stopRecording, error: error)
-            status = .idle
+            capture = nil
+            recording = nil
         }
-        recordings = store.allRecordings()
     }
 
     // MARK: - Post-processing
 
+    /// Drain the transcription queue serially in the background. Idempotent: if a
+    /// drain task is already running it just returns, and the running loop picks up
+    /// anything enqueued since. Recording continues independently throughout.
+    private func drainProcessingQueue() {
+        guard drainTask == nil else { return }
+        drainTask = Task { @MainActor in
+            while let meeting = processing.startNext() {
+                await process(meeting)
+                processing.finishCurrent()
+                progressFraction = nil
+                progressPhase = nil
+            }
+            drainTask = nil
+        }
+    }
+
     private func process(_ meeting: Meeting) async {
         guard let recording = store.allRecordings().first(where: { $0.meeting.id == meeting.id }) else {
-            status = .idle
             return
         }
         // Diarization requires the user to have enrolled their voice — otherwise
@@ -319,20 +344,18 @@ final class AppState: ObservableObject {
         } catch {
             lastError = userFacingMessage(for: .transcribing, error: error)
         }
-        progressFraction = nil
-        progressPhase = nil
-        status = .idle
+        // Progress reset + advancing the queue is handled by the drain loop.
         recordings = store.allRecordings()
     }
 
     /// Re-run the transcription pipeline for a saved recording. Recovers a meeting
     /// whose processing failed — the audio + speaker timeline are already on disk.
     func reprocess(_ recording: MeetingRecording) async {
-        guard case .idle = status else { return }
+        // Enqueue behind anything already transcribing (dedup if already queued).
+        guard !processing.contains(recording.meeting.id) else { return }
         lastError = nil
-        status = .processing(recording.meeting)
-        await process(recording.meeting)
-        recordings = store.allRecordings()
+        processing.enqueue(recording.meeting)
+        drainProcessingQueue()
     }
 
     func transcript(for recording: MeetingRecording) -> String? {
@@ -426,19 +449,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// The meeting currently being recorded or processed, if any.
-    private var activeMeetingID: String? {
-        switch status {
-        case .recording(let m), .processing(let m): return m.id
-        case .idle: return nil
-        }
-    }
-
-    /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete
-    /// the meeting that's currently recording or processing.
+    /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete a
+    /// meeting that's currently recording, transcribing, or queued for it.
     func deleteRecording(_ recording: MeetingRecording) {
-        guard activeMeetingID != recording.meeting.id else { return }
-        try? store.delete(meetingID: recording.meeting.id)
+        let id = recording.meeting.id
+        guard self.recording?.id != id, !processing.contains(id) else { return }
+        try? store.delete(meetingID: id)
         recordings = store.allRecordings()
     }
 

@@ -28,7 +28,7 @@ struct MenuBarView: View {
             }
 
             Label {
-                Text(state.status.label)
+                Text(state.statusSummary)
             } icon: {
                 Image(systemName: statusSymbol)
                     .foregroundStyle(isRecording ? .red : .primary)
@@ -93,29 +93,16 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var controls: some View {
-        switch state.status {
-        case .recording:
-            Button(role: .destructive) {
-                Task { await state.stopCapture() }
-            } label: {
-                Label("Stop & Process", systemImage: "stop.circle")
-            }
-        case .processing:
-            VStack(alignment: .leading, spacing: 6) {
-                if let fraction = state.progressFraction {
-                    ProgressView(value: fraction) {
-                        Text(state.progressPhase ?? "Processing…").font(.caption)
-                    }
-                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
-                } else {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text(state.progressPhase ?? "Processing…").font(.caption)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            // Recording control — independent of transcription, so you can stop one
+            // meeting and immediately start another while the first transcribes.
+            if state.isRecording {
+                Button(role: .destructive) {
+                    Task { await state.stopCapture() }
+                } label: {
+                    Label("Stop & Transcribe", systemImage: "stop.circle")
                 }
-            }
-        case .idle:
-            VStack(alignment: .leading, spacing: 8) {
+            } else {
                 // Start the next calendared meeting, when there is one.
                 if let next = state.upcoming.first {
                     Button {
@@ -131,19 +118,35 @@ struct MenuBarView: View {
                     Label("Record a Meeting Now", systemImage: "record.circle.fill")
                 }
             }
+
+            // Transcription progress — shown whenever a transcript is being made,
+            // even while a new meeting is recording.
+            if state.processing.current != nil {
+                Divider()
+                if let fraction = state.progressFraction {
+                    ProgressView(value: fraction) {
+                        Text(state.progressPhase ?? "Making transcript…").font(.caption)
+                    }
+                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(state.progressPhase ?? "Making transcript…").font(.caption)
+                    }
+                }
+                if state.processing.pendingCount > 0 {
+                    Text("\(state.processing.pendingCount) more queued")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
-    private var isRecording: Bool {
-        if case .recording = state.status { return true }
-        return false
-    }
+    private var isRecording: Bool { state.isRecording }
 
     private var statusSymbol: String {
-        switch state.status {
-        case .idle: return "waveform"
-        case .recording: return "record.circle.fill"
-        case .processing: return "gearshape.2"
-        }
+        if state.isRecording { return "record.circle.fill" }
+        if state.processing.current != nil { return "gearshape.2" }
+        return "waveform"
     }
 }

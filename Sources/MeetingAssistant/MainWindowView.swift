@@ -114,35 +114,38 @@ struct MainWindowView: View {
         }
     }
 
-    /// State-aware record control for the window toolbar. Mirrors the menu bar's
-    /// Start/Stop so the two stay in lockstep: Record → Stop & Process → progress.
+    /// Record control for the window toolbar. Recording and transcription are
+    /// independent: the button toggles recording, and a small indicator shows
+    /// alongside it whenever a transcript is being made (possibly for an earlier
+    /// meeting while this one records).
     @ViewBuilder
     private var recordControl: some View {
-        switch state.status {
-        case .recording:
-            Button(role: .destructive) {
-                Task { await state.stopCapture() }
-            } label: {
-                Label("Stop & Process", systemImage: "stop.circle")
+        HStack(spacing: 10) {
+            if state.processing.current != nil {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(state.progressPhase ?? "Making transcript…")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
-            .help("Stop recording and make the transcript")
-        case .processing:
-            // Non-interactive while post-processing runs; matches the menu bar.
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(state.progressPhase ?? "Processing…")
-                    .font(.caption).foregroundStyle(.secondary)
+            if state.isRecording {
+                Button(role: .destructive) {
+                    Task { await state.stopCapture() }
+                } label: {
+                    Label("Stop & Transcribe", systemImage: "stop.circle")
+                }
+                .help("Stop recording and make the transcript")
+            } else {
+                // Recording can begin before the model finishes downloading —
+                // capture is independent of it and transcription waits — so this
+                // stays enabled regardless of model readiness.
+                Button {
+                    Task { await state.startAdHocCapture() }
+                } label: {
+                    Label("Record", systemImage: "record.circle")
+                }
+                .help("Start recording a meeting now")
             }
-        case .idle:
-            // Recording can begin before the model finishes downloading —
-            // capture is independent of it and processing waits — so this stays
-            // enabled regardless of model readiness (same as the menu bar).
-            Button {
-                Task { await state.startAdHocCapture() }
-            } label: {
-                Label("Record", systemImage: "record.circle")
-            }
-            .help("Start recording a meeting now")
         }
     }
 
@@ -240,8 +243,8 @@ private struct MeetingDetailView: View {
             }
             .padding()
 
-            // Live progress while this meeting is being processed.
-            if case .processing(let m) = state.status, m.id == recording.meeting.id {
+            // Live progress while THIS meeting is the one being transcribed.
+            if state.processing.current?.id == recording.meeting.id {
                 VStack(alignment: .leading, spacing: 4) {
                     if let fraction = state.progressFraction {
                         ProgressView(value: fraction) {
