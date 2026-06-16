@@ -73,7 +73,8 @@ struct SpeakerFuserTests {
         let out = SpeakerFuser.fuse(
             segments: segments,
             timeline: SpeakerTimeline(samples: []),
-            micDiarization: spans
+            micDiarization: spans,
+            micLabels: ["Me": "Me", "spk_a": "Speaker 2"]
         )
         #expect(out.map(\.speaker) == ["Me", "Speaker 2"])
     }
@@ -92,7 +93,8 @@ struct SpeakerFuserTests {
         let out = SpeakerFuser.fuse(
             segments: segments,
             timeline: SpeakerTimeline(samples: []),
-            micDiarization: spans
+            micDiarization: spans,
+            micLabels: ["spk_a": "Speaker 2"]
         )
         #expect(out.map(\.speaker) == ["Me"])
     }

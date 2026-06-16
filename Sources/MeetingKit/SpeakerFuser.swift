@@ -21,24 +21,24 @@ public enum SpeakerFuser {
         segments: [TranscriptSegment],
         timeline: SpeakerTimeline,
         micDiarization: [DiarizedSpan] = [],
+        micLabels: [String: String] = [:],
         micLabel: String = "Me",
         unknownLabel: String = "Speaker"
     ) -> [LabeledSegment] {
-        // Precompute diarized display labels once (empty when not diarizing).
-        let micLabels = DiarizationLabeler.displayLabels(for: micDiarization)
         return segments.map { segment in
             let midpoint = (segment.start + segment.end) / 2
             let speaker: String
             switch segment.channel {
             case .microphone:
                 // No diarization → today's behavior. Otherwise resolve the span at
-                // the segment midpoint, falling back to "Me" in gaps.
+                // the segment midpoint and map its cluster id through `micLabels`,
+                // falling back to "Me" in gaps or for unmapped clusters.
                 if micDiarization.isEmpty {
                     speaker = micLabel
+                } else if let span = span(at: midpoint, in: micDiarization) {
+                    speaker = micLabels[span.speakerID] ?? micLabel
                 } else {
-                    speaker = DiarizationLabeler.speaker(
-                        at: midpoint, spans: micDiarization, labels: micLabels
-                    ) ?? micLabel
+                    speaker = micLabel
                 }
             case .system:
                 speaker = activeSpeaker(at: midpoint, in: timeline) ?? unknownLabel
@@ -50,6 +50,12 @@ public enum SpeakerFuser {
                 speaker: speaker
             )
         }
+    }
+
+    /// The first diarization span whose `[start, end)` contains `t` (end
+    /// exclusive so adjacent spans don't both match), or nil if `t` is in a gap.
+    private static func span(at t: TimeInterval, in spans: [DiarizedSpan]) -> DiarizedSpan? {
+        spans.first(where: { t >= $0.start && t < $0.end })
     }
 
     /// The on-screen active speaker's name at time `t`, or nil if unknown.

@@ -59,10 +59,15 @@ public final class MeetingProcessor {
         }
 
         // 2c. Fuse speaker labels (mic via diarization, system via the timeline).
+        //     Resolve diarized clusters to display labels. R5 will pass the real
+        //     known-speaker library snapshot; for now an empty list yields
+        //     anonymous "Speaker N" labels, preserving today's behavior.
+        let micLabels = SpeakerRecognizer.resolve(outcome: outcome, knownSpeakers: [])
         let labeled = SpeakerFuser.fuse(
             segments: cleaned,
             timeline: recording.timeline,
-            micDiarization: outcome.spans
+            micDiarization: outcome.spans,
+            micLabels: micLabels
         )
 
         // 3. Render with real wall-clock timestamps (baseDate = recording start) and
