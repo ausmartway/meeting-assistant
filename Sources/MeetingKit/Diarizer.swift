@@ -34,6 +34,8 @@ public struct MeEnrollment: Codable, Sendable, Equatable {
 /// pipeline runnable without it.
 public protocol Diarizing: Sendable {
     /// Download + load the diarization models ahead of time. Idempotent.
+    /// Intentionally reuses `TranscribeProgressHandler` so diarization plugs into
+    /// the app's existing `(fraction, phase)` progress plumbing without conversions.
     func prepare(progress: TranscribeProgressHandler?) async throws
 
     /// Diarize one audio file into speaker spans. When `enrollment` is provided,
@@ -51,7 +53,7 @@ public struct StubDiarizer: Diarizing {
     public func prepare(progress: TranscribeProgressHandler?) async throws {}
     public func diarize(
         audioFile: URL,
-        enrollment: MeEnrollment?,
+        enrollment: MeEnrollment?,        // ignored: the stub does no speaker matching
         progress: TranscribeProgressHandler?
     ) async throws -> [DiarizedSpan] { [] }
 }

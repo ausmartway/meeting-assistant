@@ -13,6 +13,17 @@ struct DiarizerStubTests {
         #expect(back == span)
     }
 
+    @Test("MeEnrollment round-trips through Codable")
+    func enrollmentCodable() throws {
+        let enrollment = MeEnrollment(
+            audioFile: URL(fileURLWithPath: "/tmp/enroll.wav"),
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let data = try JSONEncoder().encode(enrollment)
+        let back = try JSONDecoder().decode(MeEnrollment.self, from: data)
+        #expect(back == enrollment)
+    }
+
     @Test("StubDiarizer returns no spans so callers fall back to 'Me'")
     func stubReturnsEmpty() async throws {
         let stub = StubDiarizer()
