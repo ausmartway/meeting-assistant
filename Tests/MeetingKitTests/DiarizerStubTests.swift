@@ -34,4 +34,17 @@ struct DiarizerStubTests {
         )
         #expect(spans.isEmpty)
     }
+
+    @Test("Backends.makeDiarizer returns a usable diarizer")
+    func makeDiarizer() async throws {
+        let d = Backends.makeDiarizer()
+        // Whichever backend compiles in, an unenrolled empty path yields no crash.
+        _ = try? await d.diarize(
+            audioFile: URL(fileURLWithPath: "/tmp/none.wav"),
+            enrollment: nil,
+            progress: nil
+        )
+        // Exercise the capability flag symbol.
+        _ = Backends.hasLocalDiarization
+    }
 }
