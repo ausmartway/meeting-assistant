@@ -23,16 +23,19 @@ struct MeetingAssistantApp: App {
         Window("Meeting Assistant", id: "main") {
             MainWindowView()
                 .environmentObject(state)
-                .frame(minWidth: 720, minHeight: 460)
+                .frame(minWidth: 760, minHeight: 480)
                 .task {
                     await state.permissions.refresh()
                     state.start()
                 }
         }
+        .defaultSize(width: 1040, height: 680)
+        .windowResizability(.contentMinSize)
 
         Settings {
             SettingsView()
                 .environmentObject(state)
+                .tint(Theme.accent)
         }
     }
 }
