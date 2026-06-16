@@ -23,8 +23,16 @@ struct MeetingProcessorDiarizationTests {
         }
     }
 
-    @Test("diarized mic segments are labeled by speaker, not blanket 'Me'")
-    func diarizedLabels() async throws {
+    // A diarizer that always fails, to prove diarization is best-effort.
+    private struct FailingDiarizer: Diarizing {
+        struct Boom: Error {}
+        func prepare(progress: TranscribeProgressHandler?) async throws {}
+        func diarize(audioFile: URL, enrollment: MeEnrollment?, progress: TranscribeProgressHandler?) async throws -> [DiarizedSpan] {
+            throw Boom()
+        }
+    }
+
+    private func makeRecording() throws -> (MeetingStore, MeetingRecording) {
         let store = try MeetingStore(root: FileManager.default.temporaryDirectory
             .appendingPathComponent("ma-diar-\(UUID().uuidString)"))
         let meeting = Meeting.adHoc(id: UUID().uuidString, provider: nil, start: Date())
@@ -34,11 +42,15 @@ struct MeetingProcessorDiarizationTests {
             timeline: SpeakerTimeline(samples: [])
         )
         try store.save(recording)
-        // Create empty audio files so the path exists (transcriber is a stub).
         let dir = try store.directory(for: meeting.id)
         FileManager.default.createFile(atPath: dir.appendingPathComponent("mic.wav").path, contents: Data())
         FileManager.default.createFile(atPath: dir.appendingPathComponent("sys.wav").path, contents: Data())
+        return (store, recording)
+    }
 
+    @Test("diarized mic segments are labeled by speaker, not blanket 'Me'")
+    func diarizedLabels() async throws {
+        let (store, recording) = try makeRecording()
         let processor = MeetingProcessor(
             store: store,
             transcriber: OneMicSegmentTranscriber(),
@@ -48,5 +60,19 @@ struct MeetingProcessorDiarizationTests {
         let transcript = try await processor.process(recording)
         #expect(transcript.contains("Speaker 2:"))
         #expect(!transcript.contains("Me:"))
+    }
+
+    @Test("a failing diarizer is non-fatal: processing succeeds and mic stays 'Me'")
+    func diarizationFailureFallsBackToMe() async throws {
+        let (store, recording) = try makeRecording()
+        let processor = MeetingProcessor(
+            store: store,
+            transcriber: OneMicSegmentTranscriber(),
+            diarizer: FailingDiarizer(),
+            enrollment: nil
+        )
+        let transcript = try await processor.process(recording)
+        #expect(transcript.contains("Me:"))
+        #expect(!transcript.contains("Speaker 2:"))
     }
 }
