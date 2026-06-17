@@ -58,12 +58,12 @@ final class AppSettings: ObservableObject {
         self.transcriptionModel = TranscriptionModel(
             rawValue: defaults.string(forKey: Keys.transcriptionModel) ?? ""
         ) ?? .largeTurbo
-        // WhisperKit is the default: it auto-detects language and handles Mandarin,
-        // which Parakeet cannot (English/European only). Parakeet is opt-in for a
-        // ~100× speed win on English (see docs/decisions/2026-06-17-transcription-engine.md).
+        // Automatic by default: routes each channel to the fastest engine that
+        // handles its language (Parakeet for English/European, WhisperKit for
+        // Mandarin/other). See docs/decisions/2026-06-17-transcription-engine.md.
         self.transcriptionEngine = TranscriptionEngine(
             rawValue: defaults.string(forKey: Keys.transcriptionEngine) ?? ""
-        ) ?? .whisperKit
+        ) ?? .auto
         let stored = defaults.integer(forKey: Keys.transcriptionWorkers) // 0 when unset
         self.transcriptionWorkers = Self.workerRange.contains(stored) ? stored : 4
         // Default ON the first time (key absent); respect the user's choice after.
