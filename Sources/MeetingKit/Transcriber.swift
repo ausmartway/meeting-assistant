@@ -139,7 +139,7 @@ import CoreML
 /// audio channels are transcribed concurrently — concurrent downloads of the same
 /// model into the same folder were corrupting it. Channel transcriptions then run
 /// serially through the actor, which is also the safe way to reuse one pipeline.
-public actor WhisperKitTranscriber: Transcribing {
+public actor WhisperKitTranscriber: Transcribing, LanguageDetecting {
     private let model: TranscriptionModel
     /// VAD decode parallelism (`DecodingOptions.concurrentWorkerCount`). Mutable
     /// so the setting can change without reloading the model.
@@ -177,6 +177,17 @@ public actor WhisperKitTranscriber: Transcribing {
 
     public func prepare(progress: TranscribeProgressHandler?) async throws {
         _ = try await pipeline(progress: progress)
+    }
+
+    /// Cheap language detection (WhisperKit uses only the first 30 s). Returns the
+    /// top language and its probability; nil if detection throws.
+    public func detectLanguage(audioFile: URL) async throws -> DetectedLanguage? {
+        let pipe = try await pipeline(progress: nil)
+        guard let result = try? await pipe.detectLanguage(audioPath: audioFile.path) else {
+            return nil
+        }
+        let confidence = Double(result.langProbs[result.language] ?? 0)
+        return DetectedLanguage(code: result.language, confidence: confidence)
     }
 
     public func transcribe(
