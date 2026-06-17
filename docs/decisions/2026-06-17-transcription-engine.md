@@ -1,0 +1,93 @@
+# Decision record: transcription engine — evaluate Parakeet (FluidAudio) vs WhisperKit
+
+**Date:** 2026-06-17
+**Status:** Proposed (spike pending)
+**Branch:** `model-finetune`
+
+## Context
+
+The app transcribes meetings on-device with **WhisperKit `whisper-large-v3-turbo`**
+(see `CLAUDE.md` → "Transcription backend is swappable behind a protocol"). The
+backend is already pluggable behind the `Transcribing` protocol and selected via
+`Backends.makeTranscriber(...)`, so swapping engines is a contained change.
+
+Goal (owner priorities, in order): **faster**, then more accurate, then lighter
+weight. English is primary; Mandarin is a nice-to-have. On-device/private is a
+hard constraint (N1). Raising the macOS floor (currently 14) is acceptable.
+
+A deep, multi-source research pass (20 sources, 25 claims adversarially verified,
+22 confirmed) produced the comparison below.
+
+## Options compared
+
+| Engine | Speed (Apple Silicon) | English accuracy | Size / memory | Swift path | Mandarin | License |
+|---|---|---|---|---|---|---|
+| **Parakeet TDT 0.6B (FluidAudio)** | ~155–190× realtime on ANE (1 hr ≈ 19 s on M4 Pro) | ≥ large-v3-turbo on clean/short English | 0.6B, ANE-only → lower mem | **FluidAudio** Swift 6 / CoreML SDK | v3 multilingual exists; CJK unproven | Apache-2.0 + MIT |
+| WhisperKit large-v3-turbo (current) | baseline | baseline | larger | already integrated | strong (current path) | MIT/Apache |
+| Apple SpeechAnalyzer (macOS 26) | very fast, zero download/memory | mid-tier (~14% WER earnings — a regression) | built into OS | Swift-native (`CMTimeRange`) | yes | OS built-in |
+| SenseVoice-Small | ~15× Whisper-Large (CUDA figure) | strong CJK | small | community MLX/CoreML only | best Mandarin | check |
+| Moonshine | edge-fast, advantage vanishes on long-form | Medium ~6.65% | 245M, English-only | native Swift | no | — |
+
+## Decision
+
+**Proposed: make Parakeet TDT 0.6B (via FluidAudio) the primary backend; keep
+WhisperKit large-v3-turbo as a fallback — notably for Mandarin.** Subject to the
+spike below confirming real-world numbers on a target Mac.
+
+Rationale:
+- **Speed (priority #1):** fastest credible on-device option by a wide margin;
+  ANE-only leaves the GPU free and uses less memory (good on 16 GB Macs).
+- **No English-accuracy regression:** matches or beats large-v3-turbo on English.
+- **Low integration effort:** FluidAudio is a production Swift 6 / CoreML SDK
+  (Apache-2.0 + MIT, commercial-OK) that fits behind the existing `Transcribing`
+  protocol via `Backends`.
+
+Rejected as primary:
+- **Apple SpeechAnalyzer** — mid-tier accuracy *and* forces a macOS 14 → 26 jump.
+  Reasonable later as an *optional* secondary, not the default.
+- **SenseVoice** — best Mandarin, but no first-party Apple Silicon path (community
+  ports only). Revisit only if Chinese becomes a hard requirement.
+- **Moonshine** — English-only; speed edge disappears on long meeting audio.
+
+## Risks / unknowns to resolve in the spike
+
+1. **Benchmarks are high-end / batch.** 155–190× are M4 Pro / batch figures; a
+   16 GB base Mac single-stream will be slower (still > realtime). Re-benchmark on
+   a real target Mac.
+2. **Mandarin unmeasured.** Keeping WhisperKit large-v3-turbo as fallback preserves
+   the proven Chinese path; route by detected language or expose as a setting.
+3. **Meeting audio ≠ benchmark audio.** Noisy, multi-speaker, distant-mic meetings
+   will be worse than clean read-speech / earnings WERs for every engine.
+4. **Pipeline integration (load-bearing):** confirm Parakeet/FluidAudio returns
+   **per-segment timestamps** and works on the **separate mic vs. system audio
+   files** — both required by `SpeakerFuser` and the "Me vs. remote" split. Verify
+   FluidAudio's **minimum macOS** (sources cite 13+/14+, unconfirmed) against the
+   macOS 14 target.
+
+## Spike plan (next step)
+
+A low-risk, reversible experiment on this branch:
+
+1. Add FluidAudio as an SPM dependency (in MeetingKit, alongside WhisperKit, under
+   `#if canImport(FluidAudio)`).
+2. Implement `FluidAudioTranscriber: Transcribing` (actor) mirroring
+   `WhisperKitTranscriber`: `prepare`, `setConcurrentWorkers` (no-op if N/A),
+   `transcribe(audioFile:channel:progress:) -> [TranscriptSegment]` mapping
+   FluidAudio segments → `TranscriptSegment` with start/end/text/channel.
+3. Route it through `Backends.makeTranscriber(...)` behind a hidden setting /
+   build flag so it doesn't disturb the default path.
+4. Benchmark harness: run both engines on a few real recordings (English + at least
+   one Mandarin), measuring wall-clock RTFx and eyeballing accuracy + that
+   timestamps and the mic/system split survive intact.
+5. Decide: if Parakeet holds up, make it the default and keep WhisperKit as the
+   Mandarin/fallback engine; update `CLAUDE.md` + `REQUIREMENTS.md` (R5 is
+   multilingual — keep that true via the fallback).
+
+## Key sources
+
+- FluidAudio: <https://github.com/FluidInference/FluidAudio> ·
+  [benchmarks](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/Benchmarks.md)
+- Parakeet-TDT-0.6B-v2 model card: <https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2>
+- FluidAudio CoreML build: <https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml>
+- arXiv 2510.06961: <https://arxiv.org/html/2510.06961v4>
+- Apple WWDC25 session 277 (SpeechAnalyzer): <https://developer.apple.com/videos/play/wwdc2025/277/>
