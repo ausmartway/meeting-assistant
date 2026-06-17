@@ -75,14 +75,13 @@ CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recordin
 ### Languages
 
 Transcription has **two selectable engines** (`TranscriptionEngine`, resolved via
-`Backends.makeTranscriber(engine:…)`): **Parakeet** (NVIDIA, via FluidAudio) is the
-**default** — English-first, ~100× faster on real speech (see
-`docs/decisions/2026-06-17-transcription-engine.md`) — and **WhisperKit** is the
-multilingual path, selectable in Settings. WhisperKit is **multilingual with
-auto-detection** (English + Mandarin): `TranscriptionModel` cases are multilingual
-Whisper variants (no `.en`), and `WhisperKitTranscriber` passes
-`DecodingOptions(language: nil, detectLanguage: true)`. Mandarin users select
-WhisperKit. Chinese-awareness also lives in `SpeakerSampler` (OCR
+`Backends.makeTranscriber(engine:…)`): **WhisperKit** is the **default** and the
+multilingual path; **Parakeet** (NVIDIA, via FluidAudio) is an opt-in, ~100×-faster
+**English/European-only** engine that **cannot transcribe Mandarin** (so it is never
+the default — see `docs/decisions/2026-06-17-transcription-engine.md`). WhisperKit is
+**multilingual with auto-detection** (English + Mandarin): `TranscriptionModel` cases
+are multilingual Whisper variants (no `.en`), and `WhisperKitTranscriber` passes
+`DecodingOptions(language: nil, detectLanguage: true)`. Chinese-awareness also lives in `SpeakerSampler` (OCR
 `recognitionLanguages` include `zh-Hans`/`zh-Hant`; `bestName` filters CJK UI
 words) and `HallucinationFilter` (Mandarin stock phrases + CJK punctuation
 stripping). The **UI is English-only** — no string localization yet.
