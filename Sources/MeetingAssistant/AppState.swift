@@ -262,12 +262,16 @@ final class AppState: ObservableObject {
     /// `NotificationCoordinator` → `startCaptureFromNotification`.
     private func promptToRecord(_ meeting: Meeting) {
         guard !notifiedMeetingIDs.contains(meeting.id) else { return }
-        notifiedMeetingIDs.insert(meeting.id)
-        postPromptNotification(
+        // Only record the meeting as prompted if we actually posted — otherwise a
+        // meeting detected before notifications are granted would be marked
+        // "notified" and never prompt once permission is granted.
+        if postPromptNotification(
             title: "Start recording?",
             body: "“\(meeting.title)” looks like it has started. Tap Start Recording to capture and transcribe it.",
             meeting: meeting
-        )
+        ) {
+            notifiedMeetingIDs.insert(meeting.id)
+        }
     }
 
     /// Called by `NotificationCoordinator` when the user taps "Start Recording".
@@ -498,9 +502,12 @@ final class AppState: ObservableObject {
 
     /// Post the actionable "Start recording?" prompt: same as `postNotification`
     /// but carries the category (so the Start button shows) and the meeting payload
-    /// the action handler resolves.
-    private func postPromptNotification(title: String, body: String, meeting: Meeting) {
-        guard permissions.notifications == .granted else { return }
+    /// the action handler resolves. Returns true iff a request was actually posted
+    /// (false when notification permission isn't granted), so the caller only marks
+    /// the meeting as prompted when it really was.
+    @discardableResult
+    private func postPromptNotification(title: String, body: String, meeting: Meeting) -> Bool {
+        guard permissions.notifications == .granted else { return false }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -508,5 +515,6 @@ final class AppState: ObservableObject {
         content.userInfo = MeetingNotification.userInfo(for: meeting)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+        return true
     }
 }
