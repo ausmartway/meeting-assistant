@@ -75,6 +75,9 @@ final class AppState: ObservableObject {
     private var drainTask: Task<Void, Never>?
     private var pollTimer: Timer?
     private var notifiedMeetingIDs: Set<String> = []
+    /// Registers the actionable notification + handles the user tapping "Start
+    /// Recording" on a detected meeting.
+    private let notificationCoordinator = NotificationCoordinator()
     private var cancellables: Set<AnyCancellable> = []
 
     /// Set once the main window has been auto-opened at launch, so we only do it
@@ -171,6 +174,8 @@ final class AppState: ObservableObject {
     func start() {
         applyDockIconSetting()
         refreshUpcoming()
+        notificationCoordinator.appState = self
+        notificationCoordinator.register()
         Task { await prepareModel() }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -216,11 +221,11 @@ final class AppState: ObservableObject {
 
     private func tick() {
         refreshUpcoming()
-        // Auto-start only gates on whether we're already recording — transcription
-        // of a previous meeting runs independently and must not block a new one.
+        // We never start recording on our own anymore — detection only prompts.
+        // Skip prompting while a capture is already running.
         guard recording == nil else { return }
         for meeting in upcoming where detector.shouldAutoStart(meeting) {
-            notifyAndStart(meeting)
+            promptToRecord(meeting)
             break
         }
     }
@@ -252,14 +257,27 @@ final class AppState: ObservableObject {
 
     // MARK: - Capture control
 
-    /// Auto-start path: notify the user that recording began, then start.
-    private func notifyAndStart(_ meeting: Meeting) {
+    /// A meeting was detected as live: prompt the user (once) with an actionable
+    /// notification. Capture starts only if they tap "Start Recording" — handled by
+    /// `NotificationCoordinator` → `startCaptureFromNotification`.
+    private func promptToRecord(_ meeting: Meeting) {
         guard !notifiedMeetingIDs.contains(meeting.id) else { return }
         notifiedMeetingIDs.insert(meeting.id)
-        postNotification(
-            title: "Recording started",
-            body: "Meeting Assistant is transcribing “\(meeting.title)”."
+        postPromptNotification(
+            title: "Start recording?",
+            body: "“\(meeting.title)” looks like it has started. Tap Start Recording to capture and transcribe it.",
+            meeting: meeting
         )
+    }
+
+    /// Called by `NotificationCoordinator` when the user taps "Start Recording".
+    /// Resolves the payload (live meeting, or a reconstructed ad-hoc one) and
+    /// starts capture. A no-op if resolution fails or a capture is already active
+    /// (`startCapture` guards `recording == nil`).
+    func startCaptureFromNotification(userInfo: [AnyHashable: Any]) {
+        guard let meeting = MeetingNotification.resolve(
+            userInfo: userInfo, upcoming: upcoming, now: Date()
+        ) else { return }
         Task { await startCapture(for: meeting) }
     }
 
@@ -474,6 +492,20 @@ final class AppState: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Post the actionable "Start recording?" prompt: same as `postNotification`
+    /// but carries the category (so the Start button shows) and the meeting payload
+    /// the action handler resolves.
+    private func postPromptNotification(title: String, body: String, meeting: Meeting) {
+        guard permissions.notifications == .granted else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.categoryIdentifier = MeetingNotification.categoryID
+        content.userInfo = MeetingNotification.userInfo(for: meeting)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
