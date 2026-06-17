@@ -81,12 +81,32 @@ public protocol Transcribing: Sendable {
         channel: AudioChannel,
         progress: TranscribeProgressHandler?
     ) async throws -> [TranscriptSegment]
+
+    /// Transcribe with an optional detected-language hint. Engines that auto-detect
+    /// (WhisperKit) ignore it; Parakeet `.v3` uses it for script-aware filtering.
+    func transcribe(
+        audioFile: URL,
+        channel: AudioChannel,
+        languageHint: String?,
+        progress: TranscribeProgressHandler?
+    ) async throws -> [TranscriptSegment]
 }
 
 public extension Transcribing {
     /// Convenience overload without progress reporting.
     func transcribe(audioFile: URL, channel: AudioChannel) async throws -> [TranscriptSegment] {
         try await transcribe(audioFile: audioFile, channel: channel, progress: nil)
+    }
+
+    /// Default: ignore the hint and transcribe normally (right for auto-detecting
+    /// engines like WhisperKit and for the stub).
+    func transcribe(
+        audioFile: URL,
+        channel: AudioChannel,
+        languageHint: String?,
+        progress: TranscribeProgressHandler?
+    ) async throws -> [TranscriptSegment] {
+        try await transcribe(audioFile: audioFile, channel: channel, progress: progress)
     }
 
     func setConcurrentWorkers(_ count: Int) async {}
@@ -398,6 +418,33 @@ public actor FluidAudioTranscriber: Transcribing {
             fallbackDuration: result.duration
         )
         // Reuse the same silence/stock-phrase cleanup the WhisperKit path applies.
+        return HallucinationFilter.clean(segments)
+    }
+
+    public func transcribe(
+        audioFile: URL,
+        channel: AudioChannel,
+        languageHint: String?,
+        progress: TranscribeProgressHandler?
+    ) async throws -> [TranscriptSegment] {
+        let mgr = try await manager(progress: progress)
+        let label = channel == .microphone ? "Transcribing your audio…" : "Transcribing others' audio…"
+        progress?(TranscribeProgress(fraction: 0, phase: label))
+
+        var state = try TdtDecoderState()
+        let lang = languageHint.flatMap(Language.init(rawValue:))
+        let result = try await mgr.transcribe(audioFile, decoderState: &state, language: lang)
+        progress?(TranscribeProgress(fraction: 1, phase: label))
+
+        let tokens = (result.tokenTimings ?? []).map {
+            ParakeetToken(token: $0.token, startTime: $0.startTime, endTime: $0.endTime)
+        }
+        let segments = ParakeetSegmentBuilder.segments(
+            tokens: tokens,
+            channel: channel,
+            fallbackText: result.text,
+            fallbackDuration: result.duration
+        )
         return HallucinationFilter.clean(segments)
     }
 }
