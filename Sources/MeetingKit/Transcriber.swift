@@ -325,3 +325,78 @@ private final class SegmentProgressReporter: @unchecked Sendable {
     }
 }
 #endif
+
+// MARK: - Parakeet engine (compiled only when FluidAudio is available)
+
+#if canImport(FluidAudio)
+import FluidAudio
+import AVFoundation
+
+/// NVIDIA Parakeet via the FluidAudio SDK. An actor so the model loads exactly once
+/// even when the two audio channels are transcribed concurrently (mirrors
+/// `WhisperKitTranscriber`). English-first; the app keeps WhisperKit as the
+/// multilingual/Mandarin path.
+public actor FluidAudioTranscriber: Transcribing {
+    private let version: AsrModelVersion
+    /// Memoize the load *task* (not the result) so concurrent channels share one
+    /// download/load instead of each starting their own.
+    private var loadTask: Task<AsrManager, Error>?
+
+    /// `.v2` is the English Parakeet-TDT-0.6B. (`.v3` is multilingual; not used here.)
+    public init(version: AsrModelVersion = .v2) {
+        self.version = version
+    }
+
+    /// Parakeet doesn't expose WhisperKit-style VAD worker tuning; no-op.
+    public func setConcurrentWorkers(_ count: Int) {}
+
+    public func prepare(progress: TranscribeProgressHandler?) async throws {
+        _ = try await manager(progress: progress)
+    }
+
+    private func manager(progress: TranscribeProgressHandler?) async throws -> AsrManager {
+        if let loadTask { return try await loadTask.value }
+        let version = self.version
+        let task = Task { () throws -> AsrManager in
+            progress?(TranscribeProgress(fraction: nil, phase: "Preparing Parakeet model…"))
+            let models = try await AsrModels.downloadAndLoad(version: version)
+            let mgr = AsrManager(config: .default)
+            try await mgr.loadModels(models)
+            return mgr
+        }
+        loadTask = task
+        do {
+            return try await task.value
+        } catch {
+            loadTask = nil   // let a later call retry a failed download/load
+            throw error
+        }
+    }
+
+    public func transcribe(
+        audioFile: URL,
+        channel: AudioChannel,
+        progress: TranscribeProgressHandler?
+    ) async throws -> [TranscriptSegment] {
+        let mgr = try await manager(progress: progress)
+        let label = channel == .microphone ? "Transcribing your audio…" : "Transcribing others' audio…"
+        progress?(TranscribeProgress(fraction: 0, phase: label))
+
+        var state = try TdtDecoderState()
+        let result = try await mgr.transcribe(audioFile, decoderState: &state)
+        progress?(TranscribeProgress(fraction: 1, phase: label))
+
+        let tokens = (result.tokenTimings ?? []).map {
+            ParakeetToken(token: $0.token, startTime: $0.startTime, endTime: $0.endTime)
+        }
+        let segments = ParakeetSegmentBuilder.segments(
+            tokens: tokens,
+            channel: channel,
+            fallbackText: result.text,
+            fallbackDuration: result.duration
+        )
+        // Reuse the same silence/stock-phrase cleanup the WhisperKit path applies.
+        return HallucinationFilter.clean(segments)
+    }
+}
+#endif
