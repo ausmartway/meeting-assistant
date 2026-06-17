@@ -17,7 +17,17 @@ struct TranscribeBench {
         let which = args.count >= 3 ? args[2] : "both"
 
         let duration = audioDuration(url)
-        print("File: \(url.lastPathComponent)  duration: \(String(format: "%.1f", duration))s\n")
+        print("File: \(url.lastPathComponent)  duration: \(String(format: "%.1f", duration))s")
+
+        // Diagnostic: what does WhisperKit language detection see for this file?
+        if let det = Backends.makeLanguageDetector() {
+            if let d = try? await det.detectLanguage(audioFile: url) {
+                print("detected language: \(d.code)  confidence: \(String(format: "%.2f", d.confidence))")
+            } else {
+                print("detected language: (none)")
+            }
+        }
+        print("")
 
         if which == "whisperKit" || which == "both" {
             await run(label: "WhisperKit", engine: .whisperKit, url: url, duration: duration)

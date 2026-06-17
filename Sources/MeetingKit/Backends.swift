@@ -51,6 +51,16 @@ public enum Backends {
         #endif
     }
 
+    /// A language detector (WhisperKit) for diagnostics / the auto engine, or nil
+    /// when no real backend is compiled in.
+    public static func makeLanguageDetector() -> LanguageDetecting? {
+        #if canImport(WhisperKit)
+        return WhisperKitTranscriber()
+        #else
+        return nil
+        #endif
+    }
+
     /// The on-device diarizer: real FluidAudio when available, else the stub.
     public static func makeDiarizer() -> Diarizing {
         #if canImport(FluidAudio)
