@@ -20,6 +20,19 @@ public enum Backends {
             #else
             return StubTranscriber()
             #endif
+        case .auto:
+            #if canImport(WhisperKit) && canImport(FluidAudio)
+            let whisper = WhisperKitTranscriber(model: model, concurrentWorkers: workers)
+            return AutoRoutingTranscriber(
+                detector: whisper,
+                whisper: whisper,
+                parakeet: FluidAudioTranscriber(version: .v3)
+            )
+            #elseif canImport(WhisperKit)
+            return WhisperKitTranscriber(model: model, concurrentWorkers: workers)
+            #else
+            return StubTranscriber()
+            #endif
         case .whisperKit:
             #if canImport(WhisperKit)
             return WhisperKitTranscriber(model: model, concurrentWorkers: workers)

@@ -34,11 +34,13 @@ public enum TranscriptionModel: String, Codable, Sendable, CaseIterable {
 /// multilingual/Mandarin path; Parakeet (NVIDIA, via FluidAudio) is an English-first
 /// engine that is much faster on Apple Silicon.
 public enum TranscriptionEngine: String, Codable, Sendable, CaseIterable {
+    case auto
     case whisperKit
     case parakeet
 
     public var displayName: String {
         switch self {
+        case .auto:       return "Automatic (fast English, accurate Mandarin)"
         case .whisperKit: return "WhisperKit (multilingual, best for Mandarin)"
         case .parakeet:   return "Parakeet (English, fastest)"
         }

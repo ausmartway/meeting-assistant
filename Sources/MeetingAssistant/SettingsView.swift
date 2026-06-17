@@ -174,8 +174,9 @@ struct SettingsView: View {
                     // Switching engines loads a different model.
                     Task { await state.prepareModel() }
                 }
-                Text("Parakeet is much faster on Apple Silicon and English-only. "
-                     + "WhisperKit stays best for Mandarin and other languages.")
+                Text("Automatic uses fast Parakeet for English/European speech and "
+                     + "WhisperKit for Mandarin and other languages. Pick a specific "
+                     + "engine to override.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
