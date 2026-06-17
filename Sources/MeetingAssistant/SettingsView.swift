@@ -163,6 +163,20 @@ struct SettingsView: View {
                 Text("Higher quality is more accurate but downloads a larger model "
                      + "(up to ~1.6 GB) and transcribes a little slower.")
                     .font(.caption).foregroundStyle(.secondary)
+
+                Picker("Engine", selection: Binding(
+                    get: { state.settings.transcriptionEngine },
+                    set: { state.settings.transcriptionEngine = $0 }
+                )) {
+                    ForEach(TranscriptionEngine.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .onChange(of: state.settings.transcriptionEngine) {
+                    // Switching engines loads a different model.
+                    Task { await state.prepareModel() }
+                }
+                Text("Parakeet is much faster on Apple Silicon and English-only. "
+                     + "WhisperKit stays best for Mandarin and other languages.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding()
