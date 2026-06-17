@@ -30,6 +30,21 @@ public enum TranscriptionModel: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Which on-device transcription engine to use. WhisperKit is the default and the
+/// multilingual/Mandarin path; Parakeet (NVIDIA, via FluidAudio) is an English-first
+/// engine that is much faster on Apple Silicon.
+public enum TranscriptionEngine: String, Codable, Sendable, CaseIterable {
+    case whisperKit
+    case parakeet
+
+    public var displayName: String {
+        switch self {
+        case .whisperKit: return "WhisperKit (multilingual, best for Mandarin)"
+        case .parakeet:   return "Parakeet (English, fastest)"
+        }
+    }
+}
+
 /// Coarse progress for the transcription stage. `fraction` is the model-download
 /// progress (0...1) while downloading, then nil once the model is loading/running
 /// (which WhisperKit doesn't surface a fraction for). `phase` is a UI label.
