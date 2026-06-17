@@ -11,8 +11,9 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(transcriptionModel.rawValue, forKey: Keys.transcriptionModel) }
     }
 
-    /// Which transcription engine to use. WhisperKit by default (multilingual);
-    /// Parakeet is an English-first, much faster Apple-Silicon engine.
+    /// Which transcription engine to use. `.auto` by default — routes each channel
+    /// to Parakeet (fast, English/European) or WhisperKit (Mandarin/other) by
+    /// detected language. WhisperKit and Parakeet can also be forced explicitly.
     @Published var transcriptionEngine: TranscriptionEngine {
         didSet { defaults.set(transcriptionEngine.rawValue, forKey: Keys.transcriptionEngine) }
     }
