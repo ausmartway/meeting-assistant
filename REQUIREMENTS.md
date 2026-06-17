@@ -35,6 +35,10 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R3 — Immediate meeting entry.** The moment "Record" is pressed, a meeting entry
   appears in the list (shown live; it is **not** persisted to disk until the
   recording is stopped and finalized).
+- **R3b — Stop transcription.** The user can stop the in-flight transcript from the
+  menu bar or the main window. Stopping is silent (no notification), leaves any
+  queued meetings transcribing, and keeps the stopped meeting re-transcribable
+  ("Make Transcript Again") — nothing partial is written.
 
 ### Transcription quality
 - **R4 — Readable transcripts.** Transcripts must be clean. Whisper artifacts —
