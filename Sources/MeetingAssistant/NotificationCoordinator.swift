@@ -48,13 +48,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let actionID = response.actionIdentifier
         let userInfo = response.notification.request.content.userInfo
-        Task { @MainActor in
-            if actionID == MeetingNotification.startActionID {
-                appState?.startCaptureFromNotification(userInfo: userInfo)
-            }
-            completionHandler()
+        if response.actionIdentifier == MeetingNotification.startActionID {
+            Task { @MainActor in appState?.startCaptureFromNotification(userInfo: userInfo) }
         }
+        completionHandler()
     }
 }
