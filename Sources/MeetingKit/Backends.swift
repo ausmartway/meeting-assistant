@@ -8,12 +8,25 @@ public enum Backends {
 
     /// The on-device transcriber: real WhisperKit when available, else the stub.
     /// `workers` is the VAD decode parallelism (see `WhisperKitTranscriber`).
-    public static func makeTranscriber(model: TranscriptionModel, workers: Int = 4) -> Transcribing {
-        #if canImport(WhisperKit)
-        return WhisperKitTranscriber(model: model, concurrentWorkers: workers)
-        #else
-        return StubTranscriber()
-        #endif
+    public static func makeTranscriber(
+        engine: TranscriptionEngine = .whisperKit,
+        model: TranscriptionModel,
+        workers: Int = 4
+    ) -> Transcribing {
+        switch engine {
+        case .parakeet:
+            #if canImport(FluidAudio)
+            return FluidAudioTranscriber()
+            #else
+            return StubTranscriber()
+            #endif
+        case .whisperKit:
+            #if canImport(WhisperKit)
+            return WhisperKitTranscriber(model: model, concurrentWorkers: workers)
+            #else
+            return StubTranscriber()
+            #endif
+        }
     }
 
     /// Whether a real on-device transcription backend is compiled in.
