@@ -126,10 +126,7 @@ final class AppState: ObservableObject {
         // A failure here is unrecoverable (no place to store data); surface loudly.
         self.store = try! MeetingStore()
         self.recordings = store.allRecordings()
-        self.transcriber = Backends.makeTranscriber(
-            model: settings.transcriptionModel,
-            workers: settings.transcriptionWorkers
-        )
+        self.transcriber = settings.makeTranscriber()
         self.diarizer = Backends.makeDiarizer()
         // Re-publish permission changes so onboarding/menu views observing AppState
         // update live as the user grants each capability.
@@ -194,10 +191,7 @@ final class AppState: ObservableObject {
         modelReady = false
         modelFailed = false
         modelStatusText = "Preparing model…"
-        transcriber = Backends.makeTranscriber(
-            model: settings.transcriptionModel,
-            workers: settings.transcriptionWorkers
-        )
+        transcriber = settings.makeTranscriber()
         let tHandler: TranscribeProgressHandler = { [weak self] p in
             Task { @MainActor in
                 self?.modelDownloadFraction = p.fraction

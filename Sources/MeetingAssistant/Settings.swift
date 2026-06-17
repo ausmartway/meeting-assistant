@@ -11,6 +11,12 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(transcriptionModel.rawValue, forKey: Keys.transcriptionModel) }
     }
 
+    /// Which transcription engine to use. WhisperKit by default (multilingual);
+    /// Parakeet is an English-first, much faster Apple-Silicon engine.
+    @Published var transcriptionEngine: TranscriptionEngine {
+        didSet { defaults.set(transcriptionEngine.rawValue, forKey: Keys.transcriptionEngine) }
+    }
+
     /// How many VAD chunks WhisperKit decodes in parallel. 4 is the sweet spot on
     /// an M1 Pro (good throughput without saturating the single GPU); higher hits
     /// diminishing returns, lower is gentler on the machine during other work.
@@ -41,6 +47,7 @@ final class AppSettings: ObservableObject {
 
     enum Keys {
         static let transcriptionModel = "transcriptionModel"
+        static let transcriptionEngine = "transcriptionEngine"
         static let transcriptionWorkers = "transcriptionWorkers"
         static let showDockIcon = "showDockIcon"
         static let identifyInRoomSpeakers = "identifyInRoomSpeakers"
@@ -51,6 +58,9 @@ final class AppSettings: ObservableObject {
         self.transcriptionModel = TranscriptionModel(
             rawValue: defaults.string(forKey: Keys.transcriptionModel) ?? ""
         ) ?? .largeTurbo
+        self.transcriptionEngine = TranscriptionEngine(
+            rawValue: defaults.string(forKey: Keys.transcriptionEngine) ?? ""
+        ) ?? .whisperKit
         let stored = defaults.integer(forKey: Keys.transcriptionWorkers) // 0 when unset
         self.transcriptionWorkers = Self.workerRange.contains(stored) ? stored : 4
         // Default ON the first time (key absent); respect the user's choice after.
@@ -63,9 +73,13 @@ final class AppSettings: ObservableObject {
         self.speakerLibrary = SpeakerLibrary(url: base.appendingPathComponent("MeetingAssistant/speakers.json"))
     }
 
-    /// Build the on-device transcriber (real WhisperKit when compiled in).
+    /// Build the on-device transcriber for the selected engine.
     func makeTranscriber() -> Transcribing {
-        Backends.makeTranscriber(model: transcriptionModel, workers: transcriptionWorkers)
+        Backends.makeTranscriber(
+            engine: transcriptionEngine,
+            model: transcriptionModel,
+            workers: transcriptionWorkers
+        )
     }
 
     /// Build the on-device diarizer (real FluidAudio when compiled in).
