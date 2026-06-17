@@ -11,6 +11,8 @@ let package = Package(
     products: [
         .executable(name: "MeetingAssistant", targets: ["MeetingAssistant"]),
         .library(name: "MeetingKit", targets: ["MeetingKit"]),
+        // Dev-only CLI to benchmark transcription engines head-to-head on a wav.
+        .executable(name: "TranscribeBench", targets: ["TranscribeBench"]),
     ],
     dependencies: [
         // On-device speech-to-text (runs the encoder on the GPU/Neural Engine).
@@ -34,6 +36,12 @@ let package = Package(
             name: "MeetingAssistant",
             dependencies: ["MeetingKit"],
             path: "Sources/MeetingAssistant"
+        ),
+        // Dev-only benchmark CLI: compares WhisperKit vs Parakeet on one audio file.
+        .executableTarget(
+            name: "TranscribeBench",
+            dependencies: ["MeetingKit"],
+            path: "Sources/TranscribeBench"
         ),
         // Unit tests for the pure-logic modules.
         .testTarget(
