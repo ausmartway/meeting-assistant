@@ -40,6 +40,9 @@ final class AppState: ObservableObject {
 
     /// True while a capture session is active (drives the record/stop control).
     var isRecording: Bool { recording != nil }
+
+    /// True while a transcript is being made (drives the Stop control).
+    var isTranscribing: Bool { processing.current != nil }
     @Published private(set) var upcoming: [Meeting] = []
     @Published private(set) var recordings: [MeetingRecording] = []
     @Published var lastError: String?
@@ -73,6 +76,10 @@ final class AppState: ObservableObject {
     private var capture: CaptureSession?
     /// The background task draining the transcription queue, nil when idle.
     private var drainTask: Task<Void, Never>?
+    /// The task transcribing the CURRENT queue item, held so the user can stop just
+    /// that item. Cancelling it makes the drain loop advance to the next queued
+    /// meeting; queued items are untouched.
+    private var currentItemTask: Task<Void, Never>?
     private var pollTimer: Timer?
     private var notifiedMeetingIDs: Set<String> = []
     /// Registers the actionable notification + handles the user tapping "Start
@@ -337,13 +344,25 @@ final class AppState: ObservableObject {
         guard drainTask == nil else { return }
         drainTask = Task { @MainActor in
             while let meeting = processing.startNext() {
-                await process(meeting)
+                // Process each item in its own child task so the user can stop just
+                // this one (cancelling it) without tearing down the whole queue.
+                let item = Task { @MainActor in await self.process(meeting) }
+                currentItemTask = item
+                await item.value
+                currentItemTask = nil
                 processing.finishCurrent()
                 progressFraction = nil
                 progressPhase = nil
             }
             drainTask = nil
         }
+    }
+
+    /// Stop the transcript currently being made. Queued meetings keep transcribing
+    /// — the drain loop advances to the next. The stopped meeting keeps its audio
+    /// and can be transcribed again later. Silent: no notification, no error banner.
+    func stopCurrentTranscription() {
+        currentItemTask?.cancel()
     }
 
     private func process(_ meeting: Meeting) async {
@@ -370,6 +389,10 @@ final class AppState: ObservableObject {
         do {
             _ = try await processor.process(recording, progress: progress)
             postNotification(title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
+        } catch is CancellationError {
+            // User stopped this transcript: silent — no error banner, no "ready"
+            // notification. The recording stays on disk with no transcript and can
+            // be re-run later via "Make Transcript Again".
         } catch {
             lastError = userFacingMessage(for: .transcribing, error: error)
         }
