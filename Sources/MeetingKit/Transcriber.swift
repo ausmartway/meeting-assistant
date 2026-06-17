@@ -150,6 +150,10 @@ public actor WhisperKitTranscriber: Transcribing {
         progress: TranscribeProgressHandler?
     ) async throws -> [TranscriptSegment] {
         let pipe = try await pipeline(progress: progress)
+        // If the user already stopped this transcript, don't start a new channel.
+        // (WhisperKit's own VAD loop is cooperatively cancellable too, so a stop
+        // mid-channel unwinds at the next chunk.)
+        try Task.checkCancellation()
         let label = channel == .microphone ? "Transcribing your audio…" : "Transcribing others' audio…"
         progress?(TranscribeProgress(fraction: 0, phase: label))
 
