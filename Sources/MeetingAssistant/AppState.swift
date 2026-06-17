@@ -40,9 +40,6 @@ final class AppState: ObservableObject {
 
     /// True while a capture session is active (drives the record/stop control).
     var isRecording: Bool { recording != nil }
-
-    /// True while a transcript is being made (drives the Stop control).
-    var isTranscribing: Bool { processing.current != nil }
     @Published private(set) var upcoming: [Meeting] = []
     @Published private(set) var recordings: [MeetingRecording] = []
     @Published var lastError: String?
