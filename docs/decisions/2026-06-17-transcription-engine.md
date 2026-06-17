@@ -83,6 +83,46 @@ A low-risk, reversible experiment on this branch:
    Mandarin/fallback engine; update `CLAUDE.md` + `REQUIREMENTS.md` (R5 is
    multilingual — keep that true via the fallback).
 
+## Spike results (measured 2026-06-17)
+
+Run with `TranscribeBench` on real recordings. **Machine:** Apple M1 Pro, 32 GB,
+macOS 26.5.1. Parakeet = `.v2` (English) via FluidAudio 0.15.3 (ANE); WhisperKit =
+large-v3-turbo. RTFx = audio-seconds ÷ wall-seconds (higher is faster).
+
+| Clip | Engine | Wall | RTFx | Segments | Notes |
+|---|---|---|---|---|---|
+| 159 s **mic** (dense English speech) | WhisperKit | 113.07 s | **1.4×** | 67 | barely real-time once there's real speech |
+| 159 s **mic** (same) | Parakeet | **1.07 s** | **149.3×** | 54 | ~**105× faster wall-clock** |
+| 118 s system (near-silent) | WhisperKit | 16.78 s | 7.0× | 0 | empty (no remote speech) |
+| 118 s system (near-silent) | Parakeet | 0.63 s | 187.8× | 0 | empty |
+| 159 s system (near-silent) | WhisperKit | 19.14 s | 8.3× | 1 | only a "Thank you." hallucination |
+| 159 s system (near-silent) | Parakeet | 0.90 s | 176.3× | 0 | empty |
+
+**Speed — decisive.** On the only clip with real dense speech, WhisperKit dropped
+to **1.4× RTFx** (113 s for 159 s of audio) while Parakeet held **~149×** (1.07 s)
+— about **100× faster** wall-clock. The advantage is largest exactly where it
+matters (long meetings with lots of talking).
+
+**Accuracy — comparable on this clip.** Both captured the gist. WhisperKit was
+marginally more faithful (e.g. "That's game day" vs Parakeet "That's game game";
+Parakeet hallucinated "in the crumble"); Parakeet had cleaner punctuation/casing.
+Neither was clearly better on fast, casual, overlapping speech. Mandarin was not
+exercised (no Mandarin clip on hand) — WhisperKit fallback remains the safe path
+there.
+
+**Caveats from the run.** (1) A CoreML `E5RT … zero shape` warning is logged on
+near-silent audio (emitted during the WhisperKit/CoreML run on macOS 26); it did
+not crash and output was still produced. (2) Parakeet returns empty on silent
+audio (no false "Thank you." hallucination — arguably better). (3) These are
+single-stream numbers on an M1 Pro; a 16 GB base Mac will be somewhat slower but
+the order-of-magnitude gap holds.
+
+**Conclusion:** the spike confirms the recommendation. Parakeet is dramatically
+faster with comparable English accuracy. Proposed next step: keep WhisperKit the
+default for now (Mandarin safety), ship the engine picker so Parakeet is opt-in,
+and consider making Parakeet the default after a Mandarin check and a wider
+accuracy pass on noisier meeting audio.
+
 ## Key sources
 
 - FluidAudio: <https://github.com/FluidInference/FluidAudio> ·
