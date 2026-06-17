@@ -6,8 +6,8 @@ import MeetingKit
 
 /// The app coordinator: owns the calendar/detector/capture/processor wiring and
 /// the observable state the UI renders. Runs the "calendar AND app detected"
-/// auto-start loop, manages a single capture session, and kicks off
-/// post-meeting processing.
+/// loop that prompts the user to record, manages a single capture session, and
+/// kicks off post-meeting processing.
 @MainActor
 final class AppState: ObservableObject {
     /// Weak global handle so the app delegate (Dock-click / reopen handling) can
