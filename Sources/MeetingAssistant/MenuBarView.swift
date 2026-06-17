@@ -148,6 +148,12 @@ struct MenuBarView: View {
                     Text("\(state.processing.pendingCount) more queued")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+                Button(role: .destructive) {
+                    state.stopCurrentTranscription()
+                } label: {
+                    Label("Stop Transcript", systemImage: "stop.circle")
+                }
+                .controlSize(.small)
             }
         }
     }

@@ -337,16 +337,25 @@ private struct MeetingDetailView: View {
     }
 
     private var progressRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let fraction = state.progressFraction {
-                ProgressView(value: fraction) { Text(state.progressPhase ?? "Transcribing…").font(.caption) }
-                Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(state.progressPhase ?? "Transcribing…").font(.caption)
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let fraction = state.progressFraction {
+                    ProgressView(value: fraction) { Text(state.progressPhase ?? "Transcribing…").font(.caption) }
+                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(state.progressPhase ?? "Transcribing…").font(.caption)
+                    }
                 }
             }
+            Spacer()
+            Button(role: .destructive) {
+                state.stopCurrentTranscription()
+            } label: {
+                Label("Stop", systemImage: "stop.circle")
+            }
+            .controlSize(.small)
         }
         .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
