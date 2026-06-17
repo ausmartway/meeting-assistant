@@ -45,12 +45,13 @@ Silicon. It only transcribes — summarization was intentionally removed.
   especially repetition-loop garbage (walls of one repeated character/word such as
   `$$$$…` or `LAUGHTER LAUGHTER…`) — must be filtered out, alongside the existing
   silence/stock-phrase hallucinations.
-- **R5 — Multilingual by default; optional faster English engine.** **WhisperKit**
-  (multilingual Whisper, no `.en` variants) is the **default**: it auto-detects
-  language so English **and** Mandarin are first-class. A second engine, **Parakeet**
-  (NVIDIA, via FluidAudio), is **selectable in Settings** for a ~100× speed win — but
-  it is **English/European only and cannot transcribe Mandarin**, so it must not be
-  the default (see `docs/decisions/2026-06-17-transcription-engine.md`).
+- **R5 — Multilingual, auto-routed by language.** The default engine is **Automatic**:
+  it detects each channel's language and routes English/European speech to fast
+  **Parakeet** (NVIDIA, via FluidAudio) and Mandarin / other / uncertain to
+  **WhisperKit** (multilingual Whisper, no `.en` variants). English **and** Mandarin
+  stay first-class — Mandarin always goes to WhisperKit, since Parakeet is
+  English/European-only. WhisperKit-only and Parakeet-only are also selectable in
+  Settings (see `docs/decisions/2026-06-17-transcription-engine.md`).
 
 ### Speakers
 - **R6 — In-room speaker separation.** When the user is physically in a room with
