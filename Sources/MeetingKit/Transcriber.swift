@@ -188,11 +188,11 @@ public actor WhisperKitTranscriber: Transcribing, LanguageDetecting {
         guard let result = try? await pipe.detectLanguage(audioPath: audioFile.path) else {
             return nil
         }
-        // WhisperKit returns `langProbs` as LOG-probabilities (≤ 0). Convert the top
+        // WhisperKit returns `langProbs` as LOG-probabilities (≤ 0); convert the top
         // language's value to a 0...1 probability so the router's threshold works
         // (a raw log-prob like -0.08 would otherwise always be below 0.5).
         let logProb = Double(result.langProbs[result.language] ?? -.infinity)
-        let confidence = min(1.0, max(0.0, exp(logProb)))
+        let confidence = EngineRouter.probability(fromLogProb: logProb)
         return DetectedLanguage(code: result.language, confidence: confidence)
     }
 

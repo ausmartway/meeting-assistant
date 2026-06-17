@@ -39,4 +39,23 @@ struct EngineRouterTests {
         let r = EngineRouter.route(detected: nil)
         #expect(r == .whisperKit)
     }
+
+    // WhisperKit reports log-probabilities (≤ 0); a near-zero log-prob is a HIGH
+    // confidence. This pins the conversion that a real bug got wrong (treating the
+    // raw log-prob as a 0...1 value, so English never cleared the 0.5 threshold).
+    @Test("a near-zero log-prob converts to high confidence and routes to Parakeet")
+    func logProbNearZeroIsConfident() {
+        let conf = EngineRouter.probability(fromLogProb: -0.08)
+        #expect(conf > 0.9)
+        #expect(EngineRouter.route(detected: DetectedLanguage(code: "en", confidence: conf))
+                == .parakeet(languageCode: "en"))
+    }
+
+    @Test("a very negative log-prob is low confidence and routes to WhisperKit")
+    func logProbVeryNegativeIsUncertain() {
+        let conf = EngineRouter.probability(fromLogProb: -3.0)  // exp(-3) ≈ 0.05
+        #expect(conf < 0.5)
+        #expect(EngineRouter.route(detected: DetectedLanguage(code: "en", confidence: conf))
+                == .whisperKit)
+    }
 }
