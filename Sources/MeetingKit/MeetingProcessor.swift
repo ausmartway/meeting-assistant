@@ -52,6 +52,11 @@ public final class MeetingProcessor {
         let allSegments = try await (micSegments + systemSegments)
             .sorted { $0.start < $1.start }
 
+        // The user may have stopped this transcript while the (cancellation-
+        // cooperative) transcribe step ran. Bail before the expensive diarize/fuse/
+        // save so nothing partial is written — the recording stays re-transcribable.
+        try Task.checkCancellation()
+
         // 2. Drop whisper silence artifacts.
         let cleaned = HallucinationFilter.clean(allSegments)
 
@@ -64,6 +69,10 @@ public final class MeetingProcessor {
             outcome = DiarizationOutcome(spans: [], embeddings: [:])   // non-fatal — keep today's "Me" labeling
             Self.log.error("Diarization failed, falling back to single speaker: \(error.localizedDescription, privacy: .public)")
         }
+
+        // Second checkpoint: stop before fusing/formatting/saving if cancelled
+        // during diarization.
+        try Task.checkCancellation()
 
         // 2c. Fuse speaker labels (mic via diarization, system via the timeline).
         //     Resolve diarized clusters to display labels against the known-speaker
