@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 14**) that
-watches the calendar, auto-captures Zoom/Meet/Teams meetings, and produces a
+watches the calendar, prompts to capture Zoom/Meet/Teams meetings, and produces a
 speaker-labeled transcript — transcribed locally on Apple Silicon. (Summarization
 was intentionally removed; this app only transcribes.)
 
@@ -56,7 +56,7 @@ transcription work into the live path.
 ### Pipeline
 
 ```
-CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → auto-start
+CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recording?" notification → user taps Start
   → CaptureSession  [LIVE: ScreenCaptureKit system audio + AVAudioEngine mic + SpeakerSampler frames]
   → MeetingRecording bundle on disk (MeetingStore)
   → MeetingProcessor: Transcriber → HallucinationFilter → SpeakerFuser → TranscriptFormatter

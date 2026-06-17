@@ -15,8 +15,8 @@ organized*.
 ## 1. What the app is
 
 A native **macOS menu-bar + Dock app** (Swift + SwiftUI, deployment target
-**macOS 14**) that watches the calendar, auto-captures Zoom/Meet/Teams meetings,
-and produces a **speaker-labeled transcript**, transcribed **locally** on Apple
+**macOS 14**) that watches the calendar, prompts to capture Zoom/Meet/Teams
+meetings, and produces a **speaker-labeled transcript**, transcribed **locally** on Apple
 Silicon. It only transcribes — summarization was intentionally removed.
 
 ---
@@ -24,9 +24,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
 ## 2. Explicit functional requirements
 
 ### Capture & recording
-- **R1 — Auto-capture.** When a calendar meeting starts and the user joins from the
-  Zoom / Teams / Google Meet app, recording starts automatically. Manual
-  "Record a meeting now" is always available.
+- **R1 — Prompt to record.** When a calendar meeting starts and the user joins from
+  the Zoom / Teams / Google Meet app, the app posts an actionable "Start recording?"
+  notification (once per meeting); recording begins only when the user taps its
+  **Start Recording** button. Recording never starts on its own. Manual "Record a
+  meeting now" is always available.
 - **R2 — Record while transcribing.** The user can start a new recording while
   earlier meetings are still being transcribed. Recording is independent of
   transcription; finished meetings queue and transcribe serially in the background.
