@@ -30,9 +30,15 @@ A deep, multi-source research pass (20 sources, 25 claims adversarially verified
 
 ## Decision
 
-**Proposed: make Parakeet TDT 0.6B (via FluidAudio) the primary backend; keep
-WhisperKit large-v3-turbo as a fallback — notably for Mandarin.** Subject to the
-spike below confirming real-world numbers on a target Mac.
+**Final (after the spike — see "Spike results"): keep WhisperKit large-v3-turbo
+the DEFAULT; ship Parakeet TDT 0.6B (via FluidAudio) as an opt-in Settings engine.**
+The spike confirmed Parakeet is ~100× faster with comparable English accuracy, but
+also that **neither Parakeet variant can transcribe Mandarin** (`.v2` is English-
+only; `.v3` is European-multilingual, no CJK). Defaulting to Parakeet would be an N5
+regression for Mandarin users, so it stays opt-in.
+
+*(Original proposal — superseded — was to make Parakeet the primary backend; the
+Mandarin benchmark below is why the default stays WhisperKit.)*
 
 Rationale:
 - **Speed (priority #1):** fastest credible on-device option by a wide margin;
@@ -116,10 +122,23 @@ On a **115 s Mandarin** mic clip the difference is categorical:
 | Parakeet (`.v2`) | 0.73 s | 158.5× | garbage: "Mayo, whatever you want to" (2 segments) |
 
 Parakeet **`.v2` is English-only** and maps Mandarin phonemes to English nonsense —
-unusable. This makes defaulting to Parakeet `.v2` a **regression for Mandarin
-users** (violates N5). Options: keep WhisperKit the default; or route by detected
-language; or try Parakeet **`.v3`** (multilingual) and measure its Mandarin WER
-before trusting it.
+unusable.
+
+**Follow-up: Parakeet `.v3` also fails Mandarin.** Tested the multilingual `.v3`
+variant on the same clip: RTFx 165× but the text was still English gibberish
+("Uh what you want to do. … Mayor, what do you should shantia?"). Inspecting the
+SDK, FluidAudio's `Language` hint enum (`Shared/TokenLanguageFilter.swift`) covers
+**only European languages** (en, es, fr, de, …, ru, el) — **there is no Chinese/CJK
+case**. So Parakeet `.v3` is "multilingual" across European scripts only; **neither
+Parakeet variant can transcribe Mandarin.** (This corrects the research summary,
+which conflated "multilingual v3" with CJK support.)
+
+**Decision:** keep **WhisperKit the default** (it auto-detects and handles Mandarin).
+Ship **Parakeet as an opt-in** Settings engine for the ~100× English speed win.
+Defaulting to Parakeet would be an N5 regression for Mandarin users. A future
+**auto-route by detected language** (English → Parakeet, else → WhisperKit) could
+get the speed win without the regression, but needs a language-detection step and
+is out of scope here.
 
 **Caveats from the run.** (1) A CoreML `E5RT … zero shape` warning is logged on
 near-silent audio (emitted during the WhisperKit/CoreML run on macOS 26); it did

@@ -342,7 +342,9 @@ public actor FluidAudioTranscriber: Transcribing {
     /// download/load instead of each starting their own.
     private var loadTask: Task<AsrManager, Error>?
 
-    /// `.v2` is the English Parakeet-TDT-0.6B. (`.v3` is multilingual; not used here.)
+    /// `.v2` is the English Parakeet-TDT-0.6B. (`.v3` adds ~European languages but
+    /// NOT Chinese/CJK — FluidAudio's `Language` hint enum has no Mandarin case — so
+    /// neither variant can transcribe Mandarin; WhisperKit is the Mandarin path.)
     public init(version: AsrModelVersion = .v2) {
         self.version = version
     }
