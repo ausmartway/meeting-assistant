@@ -2,11 +2,11 @@ import Foundation
 import AppKit
 
 /// Confirms that the meeting for a calendared event is actually live before the
-/// app auto-starts capture. The trigger is "calendar AND app detected": a meeting
-/// is on the calendar *and* the relevant client is running.
+/// app prompts the user to record it. The trigger is "calendar AND app detected":
+/// a meeting is on the calendar *and* the relevant client is running.
 ///
-/// Detection is intentionally conservative — when it can't confirm, the app falls
-/// back to a notification asking the user to start capture manually.
+/// Detection is intentionally conservative — when it can't confirm, no prompt is
+/// posted and the user can still start capture manually from the menu bar.
 public final class MeetingDetector {
 
     /// Bundle identifiers / process names that indicate each provider is running.
@@ -51,17 +51,18 @@ public final class MeetingDetector {
         return nil
     }
 
-    /// True when both conditions for auto-start hold: the meeting has started
-    /// (within a small grace window) and its client is running.
+    /// True when both conditions for prompting the user hold: the meeting has
+    /// started (within a small grace window) and its client is running. (The name
+    /// is retained for stability; it now gates a prompt, not an automatic start.)
     public func shouldAutoStart(_ meeting: Meeting, now: Date = Date(), grace: TimeInterval = 120) -> Bool {
         guard let provider = meeting.provider else { return false }
         return Self.isWithinWindow(meeting, now: now, grace: grace)
             && isMeetingAppRunning(for: provider)
     }
 
-    /// Pure time-window half of the auto-start decision: the meeting has started
+    /// Pure time-window half of the detection decision: the meeting has started
     /// (within `grace` seconds before its start time) and has not yet ended.
-    /// Separated from the `NSWorkspace` running-app check so the auto-start timing
+    /// Separated from the `NSWorkspace` running-app check so the prompt timing
     /// — the app's headline behavior — is unit-testable.
     static func isWithinWindow(_ meeting: Meeting, now: Date, grace: TimeInterval) -> Bool {
         now >= meeting.startDate.addingTimeInterval(-grace) && now < meeting.endDate
