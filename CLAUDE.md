@@ -74,14 +74,19 @@ CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recordin
 
 ### Languages
 
-Transcription has **two selectable engines** (`TranscriptionEngine`, resolved via
-`Backends.makeTranscriber(engine:…)`): **WhisperKit** is the **default** and the
-multilingual path; **Parakeet** (NVIDIA, via FluidAudio) is an opt-in, ~100×-faster
-**English/European-only** engine that **cannot transcribe Mandarin** (so it is never
-the default — see `docs/decisions/2026-06-17-transcription-engine.md`). WhisperKit is
-**multilingual with auto-detection** (English + Mandarin): `TranscriptionModel` cases
-are multilingual Whisper variants (no `.en`), and `WhisperKitTranscriber` passes
-`DecodingOptions(language: nil, detectLanguage: true)`. Chinese-awareness also lives in `SpeakerSampler` (OCR
+Transcription has three `TranscriptionEngine` choices (resolved via
+`Backends.makeTranscriber(engine:…)`): **`.auto`** (the default), **`.whisperKit`**,
+and **`.parakeet`**. `.auto` is `AutoRoutingTranscriber`: it detects each channel's
+language (WhisperKit's `detectLanguage`, scored via `EngineRouter.probability` since
+WhisperKit returns log-probs) and routes English/European → Parakeet `.v3`
+(language-hinted, ~100× faster) and Mandarin / other / uncertain → WhisperKit. The
+routing policy is the pure `EngineRouter`; **Parakeet is English/European-only and
+cannot do Mandarin** (its `Language` set has no CJK), which is why CJK always falls
+back to WhisperKit (see `docs/decisions/2026-06-17-transcription-engine.md`).
+WhisperKit is **multilingual with auto-detection** (English + Mandarin):
+`TranscriptionModel` cases are multilingual Whisper variants (no `.en`), and
+`WhisperKitTranscriber` passes `DecodingOptions(language: nil, detectLanguage: true)`.
+Chinese-awareness also lives in `SpeakerSampler` (OCR
 `recognitionLanguages` include `zh-Hans`/`zh-Hant`; `bestName` filters CJK UI
 words) and `HallucinationFilter` (Mandarin stock phrases + CJK punctuation
 stripping). The **UI is English-only** — no string localization yet.

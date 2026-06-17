@@ -133,12 +133,25 @@ case**. So Parakeet `.v3` is "multilingual" across European scripts only; **neit
 Parakeet variant can transcribe Mandarin.** (This corrects the research summary,
 which conflated "multilingual v3" with CJK support.)
 
-**Decision:** keep **WhisperKit the default** (it auto-detects and handles Mandarin).
-Ship **Parakeet as an opt-in** Settings engine for the ~100× English speed win.
-Defaulting to Parakeet would be an N5 regression for Mandarin users. A future
-**auto-route by detected language** (English → Parakeet, else → WhisperKit) could
-get the speed win without the regression, but needs a language-detection step and
-is out of scope here.
+**Decision (updated):** built the **`auto` engine** and made it the **default**. It
+detects each channel's language (WhisperKit's 30 s detect pass) and routes
+English/European → Parakeet `.v3` (language-hinted, fast), and Mandarin / other /
+low-confidence / detection-error → WhisperKit. Per-channel, so bilingual meetings
+work. WhisperKit-only and Parakeet-only remain explicit Settings choices.
+
+**Auto verified on real clips:** English mic → detected `en` (conf 0.92) → Parakeet
+(English text); Mandarin mic → detected `zh` → WhisperKit (accurate 中文). A bug was
+found and fixed in the process: WhisperKit reports language scores as
+**log-probabilities** (≤ 0), so the router's 0.5 threshold initially rejected every
+detection (English never reached Parakeet) until the score was `exp()`-converted to
+a probability — now pinned by a regression test.
+
+**Cost note:** auto keeps WhisperKit resident (loaded once at launch for detection +
+non-European channels); Parakeet `.v3` loads lazily on the first English/European
+channel. The first such meeting pays a one-time Parakeet model compile; subsequent
+English meetings get Parakeet's ~150× speed minus a quick detect. (A single-shot
+`TranscribeBench` run understates this because it pays cold model loads inside the
+timed section.)
 
 **Caveats from the run.** (1) A CoreML `E5RT … zero shape` warning is logged on
 near-silent audio (emitted during the WhisperKit/CoreML run on macOS 26); it did
