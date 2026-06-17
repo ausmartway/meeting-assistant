@@ -103,12 +103,23 @@ to **1.4× RTFx** (113 s for 159 s of audio) while Parakeet held **~149×** (1.0
 — about **100× faster** wall-clock. The advantage is largest exactly where it
 matters (long meetings with lots of talking).
 
-**Accuracy — comparable on this clip.** Both captured the gist. WhisperKit was
-marginally more faithful (e.g. "That's game day" vs Parakeet "That's game game";
-Parakeet hallucinated "in the crumble"); Parakeet had cleaner punctuation/casing.
-Neither was clearly better on fast, casual, overlapping speech. Mandarin was not
-exercised (no Mandarin clip on hand) — WhisperKit fallback remains the safe path
-there.
+**Accuracy — comparable on English; Parakeet v2 FAILS on Mandarin.** On English,
+both captured the gist (WhisperKit marginally more faithful — "That's game day" vs
+Parakeet "game game", Parakeet hallucinated "in the crumble"; Parakeet had cleaner
+punctuation/casing).
+
+On a **115 s Mandarin** mic clip the difference is categorical:
+
+| Engine | Wall | RTFx | Output |
+|---|---|---|---|
+| WhisperKit | 44.3 s | 2.6× | accurate Mandarin: "说话 说话 我还写了一个录会议的东西 自动检测 自动检测 怎么办呢 …" |
+| Parakeet (`.v2`) | 0.73 s | 158.5× | garbage: "Mayo, whatever you want to" (2 segments) |
+
+Parakeet **`.v2` is English-only** and maps Mandarin phonemes to English nonsense —
+unusable. This makes defaulting to Parakeet `.v2` a **regression for Mandarin
+users** (violates N5). Options: keep WhisperKit the default; or route by detected
+language; or try Parakeet **`.v3`** (multilingual) and measure its Mandarin WER
+before trusting it.
 
 **Caveats from the run.** (1) A CoreML `E5RT … zero shape` warning is logged on
 near-silent audio (emitted during the WhisperKit/CoreML run on macOS 26); it did
