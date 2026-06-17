@@ -36,6 +36,13 @@ public enum EngineRouter {
         "be", "bg", "sr", "el",
     ]
 
+    /// WhisperKit reports language scores as natural-log probabilities (≤ 0).
+    /// Convert the top language's score to a 0...1 probability so `route`'s
+    /// threshold is meaningful (a raw log-prob like -0.08 is ~0.92, not "below 0.5").
+    public static func probability(fromLogProb logProb: Double) -> Double {
+        min(1.0, max(0.0, exp(logProb)))
+    }
+
     public static func route(
         detected: DetectedLanguage?,
         threshold: Double = 0.5
