@@ -27,12 +27,38 @@ public enum MeetingProvider: String, Codable, Sendable, CaseIterable {
         case .webex: return "Webex"
         }
     }
+
+    /// Browser bundle IDs that can host a web meeting (Meet, and Teams/Webex web).
+    public static let browserBundleIDs: Set<String> = [
+        "com.google.Chrome",
+        "com.apple.Safari",
+        "com.microsoft.edgemac",
+        "company.thebrowser.Browser",  // Arc
+    ]
+
+    /// Bundle IDs of the app(s) that can host a meeting for this provider — the
+    /// single source of truth shared by meeting detection and display selection
+    /// (so they can't drift). Native clients plus browsers where the provider runs
+    /// on the web.
+    public var meetingAppBundleIDs: Set<String> {
+        switch self {
+        case .zoom:
+            return ["us.zoom.xos"]
+        case .microsoftTeams:
+            return Set(["com.microsoft.teams", "com.microsoft.teams2"]).union(Self.browserBundleIDs)
+        case .googleMeet:
+            return Self.browserBundleIDs
+        case .webex:
+            return Set(["com.cisco.webexmeetings", "Cisco-Systems.Spark"]).union(
+                Self.browserBundleIDs)
+        }
+    }
 }
 
 /// A calendar meeting we may capture. Built from an EKEvent by `CalendarWatcher`,
 /// but kept free of EventKit types so it is easy to construct in tests.
 public struct Meeting: Identifiable, Codable, Sendable, Equatable {
-    public let id: String          // EKEvent.eventIdentifier (or a synthesized id)
+    public let id: String  // EKEvent.eventIdentifier (or a synthesized id)
     public let title: String
     public let startDate: Date
     public let endDate: Date
@@ -79,13 +105,13 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
 /// Which audio source a transcript segment came from. The mic-vs-system split is
 /// always exact and gives us a reliable "you vs. others" first-level attribution.
 public enum AudioChannel: String, Codable, Sendable {
-    case microphone   // the local user ("Me")
-    case system       // remote participants (mixed)
+    case microphone  // the local user ("Me")
+    case system  // remote participants (mixed)
 }
 
 /// One timestamped chunk of recognized speech, before speaker fusion.
 public struct TranscriptSegment: Codable, Sendable, Equatable {
-    public let start: TimeInterval   // seconds from meeting start
+    public let start: TimeInterval  // seconds from meeting start
     public let end: TimeInterval
     public let text: String
     public let channel: AudioChannel
@@ -101,8 +127,8 @@ public struct TranscriptSegment: Codable, Sendable, Equatable {
 /// A single sample of who appeared to be the active speaker on screen at a moment
 /// in time, produced by `SpeakerSampler` roughly every few seconds during capture.
 public struct SpeakerSample: Codable, Sendable, Equatable {
-    public let timestamp: TimeInterval   // seconds from meeting start
-    public let speakerName: String?      // OCR'd name, or nil if none detected
+    public let timestamp: TimeInterval  // seconds from meeting start
+    public let speakerName: String?  // OCR'd name, or nil if none detected
 
     public init(timestamp: TimeInterval, speakerName: String?) {
         self.timestamp = timestamp
@@ -125,7 +151,7 @@ public struct LabeledSegment: Codable, Sendable, Equatable {
     public let start: TimeInterval
     public let end: TimeInterval
     public let text: String
-    public let speaker: String   // "Me", an OCR'd name, or "Speaker N"
+    public let speaker: String  // "Me", an OCR'd name, or "Speaker N"
 
     public init(start: TimeInterval, end: TimeInterval, text: String, speaker: String) {
         self.start = start
@@ -139,7 +165,7 @@ public struct LabeledSegment: Codable, Sendable, Equatable {
 public struct MeetingRecording: Codable, Sendable, Equatable {
     public let meeting: Meeting
     public let recordedAt: Date
-    public let micAudioFile: String      // filename within the bundle
+    public let micAudioFile: String  // filename within the bundle
     public let systemAudioFile: String
     public let timeline: SpeakerTimeline
 
