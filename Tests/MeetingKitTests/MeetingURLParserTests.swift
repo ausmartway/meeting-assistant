@@ -50,4 +50,19 @@ struct MeetingURLParserTests {
         let result = MeetingURLParser.parse(url: nil, notes: "Discuss roadmap in room 4B", location: "Room 4B")
         #expect(result == nil)
     }
+
+    @Test("finds a Webex j.php join URL in the notes body")
+    func findsWebexURLInNotes() {
+        let notes = "Cisco Webex meeting\nJoin: https://acme.webex.com/acme/j.php?MTID=m1234567890\n"
+        let result = MeetingURLParser.parse(url: nil, notes: notes, location: nil)
+        #expect(result?.provider == .webex)
+        #expect(result?.url.absoluteString == "https://acme.webex.com/acme/j.php?MTID=m1234567890")
+    }
+
+    @Test("finds a Webex personal-room URL in the location field")
+    func findsWebexPersonalRoomURLInLocation() {
+        let result = MeetingURLParser.parse(url: nil, notes: nil, location: "https://acme.webex.com/meet/john.doe")
+        #expect(result?.provider == .webex)
+        #expect(result?.url.absoluteString == "https://acme.webex.com/meet/john.doe")
+    }
 }

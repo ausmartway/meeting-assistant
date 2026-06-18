@@ -76,6 +76,10 @@ public enum MeetingURLParser {
         case .microsoftTeams:
             return s.contains("teams.microsoft.com/l/meetup-join") ||
                 s.contains("teams.live.com/meet")
+        case .webex:
+            // e.g. https://acme.webex.com/acme/j.php?MTID=… or …/meet/<name>.
+            // The host (…webex.com/) is the reliable signal across Webex link forms.
+            return s.contains("webex.com/")
         }
     }
 }
