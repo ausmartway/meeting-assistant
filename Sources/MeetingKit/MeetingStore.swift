@@ -105,6 +105,64 @@ public final class MeetingStore {
         }
     }
 
+    // MARK: - Retention helpers
+
+    /// Bundle directory path for a meeting WITHOUT creating it (unlike
+    /// `directory(for:)`). Used by read/expiry/size helpers so they never
+    /// resurrect a deleted bundle as an empty folder.
+    private func bundleURL(for meetingID: String) -> URL {
+        root.appendingPathComponent(sanitize(meetingID), isDirectory: true)
+    }
+
+    /// Fixed audio filenames written by `CaptureSession`.
+    private static let audioFiles = ["mic.wav", "system.wav"]
+
+    /// True iff both audio files still exist — i.e. the recording can still be
+    /// re-transcribed. False once media has been expired to reclaim space.
+    public func hasAudio(meetingID: String) -> Bool {
+        let dir = bundleURL(for: meetingID)
+        return Self.audioFiles.allSatisfy {
+            fileManager.fileExists(atPath: dir.appendingPathComponent($0).path)
+        }
+    }
+
+    /// Delete just the heavy audio (mic.wav + system.wav), keeping the transcript,
+    /// metadata, and per-meeting speaker map. Idempotent: a missing file is a no-op.
+    public func expireMedia(meetingID: String) {
+        let dir = bundleURL(for: meetingID)
+        for name in Self.audioFiles {
+            let url = dir.appendingPathComponent(name)
+            if fileManager.fileExists(atPath: url.path) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+    }
+
+    /// Total bytes on disk for one meeting bundle (0 if absent).
+    public func bundleSize(meetingID: String) -> Int64 {
+        directorySize(bundleURL(for: meetingID))
+    }
+
+    /// Total bytes on disk across all meeting bundles, for the "space used" view.
+    public func totalSize() -> Int64 {
+        directorySize(root)
+    }
+
+    /// Recursively sum the byte size of regular files under `url`.
+    private func directorySize(_ url: URL) -> Int64 {
+        guard let en = fileManager.enumerator(
+            at: url, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in en {
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            if values?.isRegularFile == true { total += Int64(values?.fileSize ?? 0) }
+        }
+        return total
+    }
+
+    // MARK: - Private utilities
+
     /// Keep meeting ids filesystem-safe (EKEvent identifiers can contain slashes).
     private func sanitize(_ id: String) -> String {
         id.replacingOccurrences(of: "/", with: "_")
