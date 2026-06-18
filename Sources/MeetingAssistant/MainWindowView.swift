@@ -8,6 +8,7 @@ struct MainWindowView: View {
     @EnvironmentObject private var state: AppState
     @State private var selection: String?
     @State private var pendingDelete: MeetingRecording?
+    @State private var searchText = ""
 
     var body: some View {
         Group {
@@ -76,14 +77,20 @@ struct MainWindowView: View {
     }
 
     private var sidebarList: some View {
-        List(selection: $selection) {
+        let results = MeetingSearch.filter(
+            state.recordings, query: searchText, haystackByID: state.searchIndex)
+        return List(selection: $selection) {
             // The in-progress recording appears instantly, before it's saved on
             // stop — so a meeting "exists" the moment Record is pressed.
             if let live = state.recording {
                 liveRow(live).tag(live.id)
             }
             Section {
-                ForEach(state.recordings, id: \.meeting.id) { rec in
+                if results.isEmpty && !searchText.isEmpty {
+                    Text("No meetings match \u{201C}\(searchText)\u{201D}")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                ForEach(results, id: \.meeting.id) { rec in
                     meetingRow(rec)
                         .tag(rec.meeting.id)
                         .contextMenu {
@@ -91,9 +98,12 @@ struct MainWindowView: View {
                         }
                 }
             } header: {
-                if !state.recordings.isEmpty { Text("Recent") }
+                if !state.recordings.isEmpty {
+                    Text(searchText.isEmpty ? "Recent" : "Results")
+                }
             }
         }
+        .searchable(text: $searchText, prompt: "Search meetings")
     }
 
     @ViewBuilder
