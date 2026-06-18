@@ -6,6 +6,7 @@ public enum MeetingProvider: String, Codable, Sendable, CaseIterable {
     case zoom
     case googleMeet
     case microsoftTeams
+    case webex
 
     /// Human-readable name for UI.
     public var displayName: String {
@@ -13,6 +14,7 @@ public enum MeetingProvider: String, Codable, Sendable, CaseIterable {
         case .zoom: return "Zoom"
         case .googleMeet: return "Google Meet"
         case .microsoftTeams: return "Microsoft Teams"
+        case .webex: return "Webex"
         }
     }
 }

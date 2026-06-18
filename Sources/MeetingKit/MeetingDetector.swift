@@ -21,6 +21,10 @@ public final class MeetingDetector {
         "com.microsoft.teams",
         "com.microsoft.teams2",
     ]
+    private static let webexBundleIDs = [
+        "com.cisco.webexmeetings",   // Cisco Webex Meetings
+        "Cisco-Systems.Spark",       // Webex (suite) app
+    ]
 
     public init() {}
 
@@ -37,6 +41,10 @@ public final class MeetingDetector {
         case .googleMeet:
             // Meet is browser-only.
             return !running.isDisjoint(with: Self.browserBundleIDs)
+        case .webex:
+            // Webex has a native client; it also runs in browsers.
+            return !running.isDisjoint(with: Self.webexBundleIDs)
+                || !running.isDisjoint(with: Self.browserBundleIDs)
         }
     }
 
@@ -48,6 +56,7 @@ public final class MeetingDetector {
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         if !running.isDisjoint(with: Self.zoomBundleIDs) { return .zoom }
         if !running.isDisjoint(with: Self.teamsBundleIDs) { return .microsoftTeams }
+        if !running.isDisjoint(with: Self.webexBundleIDs) { return .webex }
         return nil
     }
 
