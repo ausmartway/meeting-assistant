@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 14**) that
-watches the calendar, prompts to capture Zoom/Meet/Teams meetings, and produces a
+watches the calendar, prompts to capture Zoom/Meet/Teams/Webex meetings, and produces a
 speaker-labeled transcript — transcribed locally on Apple Silicon. (Summarization
 was intentionally removed; this app only transcribes.)
 
@@ -53,6 +53,15 @@ and speaker fusion — runs **after** the meeting via `MeetingProcessor`, readin
 from the files `CaptureSession` wrote. Preserve this split; don't move
 transcription work into the live path.
 
+**Mic capture must survive audio route changes.** `AVAudioEngine` stops when the
+audio route changes (Bluetooth/AirPods switching A2DP↔HFP as a call engages the
+mic), which silently killed mic capture for whole meetings. `CaptureSession` now
+observes `AVAudioEngineConfigurationChange` and reconfigures+restarts, records
+`mic.wav` at a fixed 16 kHz via an `AVAudioConverter` (so a mid-call format change
+can't corrupt it), and runs a no-audio watchdog that surfaces a warning
+(`AppState.captureWarning` → menu bar + notification). Keep these on any change to
+the mic path.
+
 ### Pipeline
 
 ```
@@ -69,8 +78,10 @@ CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recordin
 - **`SpeakerSampler`** (Vision OCR + CoreImage highlight detection) → attaches
   real names to remote speakers, but is **best-effort and fragile** (varies by
   app/version/theme/layout). It returns `nil` when unsure, and `SpeakerFuser`
-  degrades to "Speaker". Treat any feature depending on named remote attribution
-  as best-effort.
+  degrades to "Speaker". When no active-speaker highlight is found but one tile
+  clearly dominates the frame (a 1-on-1 / speaker view), it OCRs that tile anyway
+  (`SpeakerSampler.dominantTile`) so a lone remote participant still gets named.
+  Treat any feature depending on named remote attribution as best-effort.
 
 ### Languages
 
@@ -110,9 +121,12 @@ that memoizes the load `Task` so concurrent channels share one download/load.
 ### Pure logic vs. integrations (what's tested)
 
 Pure, deterministic logic is unit-tested with **swift-testing** (`import Testing`,
-`@Suite`/`@Test`/`#expect`) — `MeetingURLParser`, `SpeakerFuser`,
+`@Suite`/`@Test`/`#expect`) — `MeetingURLParser` (incl. Webex), `SpeakerFuser`,
 `HallucinationFilter`, `TranscriptFormatter`, `WhisperTextCleaner`,
-`SpeakerSampler.bestName`, `Meeting.adHoc`. The framework integrations (EventKit, ScreenCaptureKit,
+`SpeakerSampler.bestName`/`.dominantTile`, `Meeting.adHoc`, `MeetingDetector.isInProgress`,
+`MeetingNotification`, `ParakeetSegmentBuilder`, `EngineRouter`,
+`AutoRoutingTranscriber`, `CaptureSession.convert` (mic resampling), and
+`TranscriptTitleEditor`. The framework integrations (EventKit, ScreenCaptureKit,
 AVAudioEngine, Vision) require real system access/permissions and are not unit
 tested — verify those by running the app. When adding logic, keep it pure and
 testable; follow TDD for it.

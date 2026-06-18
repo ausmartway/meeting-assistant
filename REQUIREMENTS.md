@@ -15,7 +15,7 @@ organized*.
 ## 1. What the app is
 
 A native **macOS menu-bar + Dock app** (Swift + SwiftUI, deployment target
-**macOS 14**) that watches the calendar, prompts to capture Zoom/Meet/Teams
+**macOS 14**) that watches the calendar, prompts to capture Zoom/Meet/Teams/Webex
 meetings, and produces a **speaker-labeled transcript**, transcribed **locally** on Apple
 Silicon. It only transcribes — summarization was intentionally removed.
 
@@ -25,10 +25,16 @@ Silicon. It only transcribes — summarization was intentionally removed.
 
 ### Capture & recording
 - **R1 — Prompt to record.** When a calendar meeting starts and the user joins from
-  the Zoom / Teams / Google Meet app, the app posts an actionable "Start recording?"
-  notification (once per meeting); recording begins only when the user taps its
-  **Start Recording** button. Recording never starts on its own. Manual "Record a
-  meeting now" is always available.
+  the Zoom / Teams / Google Meet / Webex app, the app posts an actionable "Start
+  recording?" notification (once per meeting); recording begins only when the user
+  taps its **Start Recording** button. Recording never starts on its own. Manual
+  "Record a meeting now" is always available.
+- **R1b — Resilient microphone capture.** The local mic is captured reliably across
+  audio **route changes** mid-meeting (e.g. AirPods/Bluetooth switching profiles
+  when a call engages the mic) — the engine reconfigures and keeps recording instead
+  of going silently dead. If the mic ever produces no audio, the app **warns the
+  user** (menu bar + notification) within a few seconds so it can be fixed live
+  rather than discovered afterwards.
 - **R2 — Record while transcribing.** The user can start a new recording while
   earlier meetings are still being transcribed. Recording is independent of
   transcription; finished meetings queue and transcribe serially in the background.
@@ -39,6 +45,15 @@ Silicon. It only transcribes — summarization was intentionally removed.
   menu bar or the main window. Stopping is silent (no notification), leaves any
   queued meetings transcribing, and keeps the stopped meeting re-transcribable
   ("Make Transcript Again") — nothing partial is written.
+- **R3c — Meeting names.** A recording is named after its **calendar invite subject**
+  whenever one applies — including when "Record a meeting now" is pressed *during* a
+  calendar meeting that is in progress. Otherwise it is a generic **"ad-hoc meeting"**.
+  The app does **not** infer the provider from a merely-running app (Teams / Zoom /
+  browsers run all day, which previously mislabeled in-room recordings as "Microsoft
+  Teams meeting").
+- **R3d — Rename a recording.** Any recording can be **renamed from the GUI**
+  (transcript detail → More → Rename). Auto-naming is best-effort; rename is the
+  reliable correction, and it keeps the saved transcript heading in sync.
 
 ### Transcription quality
 - **R4 — Readable transcripts.** Transcripts must be clean. Whisper artifacts —
@@ -68,6 +83,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
   future meetings. "Me" is just the enrolled member of that library.
 - **R10 — Conservative matching.** Only **confident** voice matches are auto-named;
   weak matches stay anonymous rather than risk the wrong name.
+- **R10b — Best-effort on-screen names.** When a remote participant's name is shown
+  on screen, the app reads it (Vision OCR) to label them — including a **single**
+  remote participant with no active-speaker highlight (a 1-on-1 / speaker view).
+  This is best-effort (varies by app/theme/layout) and degrades to "Speaker";
+  rename (R8) is always the reliable fallback.
 
 ### Interface (elegant, native macOS Dock app)
 - **R11 — Elegant, easy-to-use, native.** The GUI is a refined, native-macOS Dock
