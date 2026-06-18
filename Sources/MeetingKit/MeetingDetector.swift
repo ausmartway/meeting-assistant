@@ -48,16 +48,12 @@ public final class MeetingDetector {
         }
     }
 
-    /// Best guess at which provider is live right now, for ad-hoc captures with no
-    /// calendar entry. Prefers the native clients (unambiguous); returns nil when
-    /// only a browser is running, since a browser alone doesn't identify Meet vs
-    /// Teams vs something else. The capture works regardless — this only labels it.
-    public func firstRunningProvider() -> MeetingProvider? {
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        if !running.isDisjoint(with: Self.zoomBundleIDs) { return .zoom }
-        if !running.isDisjoint(with: Self.teamsBundleIDs) { return .microsoftTeams }
-        if !running.isDisjoint(with: Self.webexBundleIDs) { return .webex }
-        return nil
+    /// Whether `meeting` is happening right now — started within `grace` of its
+    /// start and not yet ended — regardless of whether its client app is running.
+    /// Lets a manual "Record now" attach to a calendar meeting in progress (using
+    /// its real subject) instead of creating a generic ad-hoc entry.
+    public func isInProgress(_ meeting: Meeting, now: Date = Date(), grace: TimeInterval = 300) -> Bool {
+        Self.isWithinWindow(meeting, now: now, grace: grace)
     }
 
     /// True when both conditions for prompting the user hold: the meeting has
