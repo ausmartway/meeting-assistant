@@ -433,6 +433,36 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// Rename a saved recording's title (auto-naming is never perfect — this is the
+    /// reliable fix). Persists the new title and keeps the transcript heading in
+    /// sync. No-op for a blank or unchanged title.
+    func renameRecording(_ recording: MeetingRecording, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != recording.meeting.title else { return }
+        let m = recording.meeting
+        let renamed = Meeting(
+            id: m.id, title: trimmed, startDate: m.startDate, endDate: m.endDate,
+            provider: m.provider, joinURL: m.joinURL
+        )
+        let updated = MeetingRecording(
+            meeting: renamed,
+            recordedAt: recording.recordedAt,
+            micAudioFile: recording.micAudioFile,
+            systemAudioFile: recording.systemAudioFile,
+            timeline: recording.timeline
+        )
+        do {
+            try store.save(updated)
+            if let current = store.transcript(for: m.id) {
+                try? store.saveTranscript(TranscriptTitleEditor.retitle(current, to: trimmed), for: m.id)
+            }
+            recordings = store.allRecordings()
+        } catch {
+            lastError = "Couldn’t rename the recording."
+        }
+        objectWillChange.send()
+    }
+
     /// Rename a speaker in a saved transcript. Rewrites the transcript text and,
     /// when the meeting has a persisted speaker map, teaches the shared library the
     /// new name for that cluster's voiceprint so the person is recognized in future
