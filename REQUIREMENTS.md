@@ -201,10 +201,12 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N9 — Production-quality polish.** Clean, distinctive, non-generic UI;
   thoughtful empty/loading/error states; clear copy. Light **and** dark mode both
   look native.
-- **N10 — Communicated turnaround *(planned)*.** The user gets a rough sense of how
-  long a transcript will take and sees live progress; transcription completes within
-  a reasonable multiple of the meeting length on supported Apple Silicon. *(Live
-  progress exists today (R21); an explicit time estimate does not.)*
+- **N10 — Communicated turnaround.** The user gets a rough sense of how long a
+  transcript will take and sees live progress; transcription completes within a
+  reasonable multiple of the meeting length on supported Apple Silicon. The detail
+  pane shows a smoothed "~N min left" estimate next to the progress bar during
+  transcription (it appears once progress is stable, and is omitted for the
+  near-instant Parakeet path).
 - **N11 — Manageable storage.** Recordings (audio + transcripts) must not grow
   unbounded without the user's awareness; the user can see and reclaim space, and
   long-term retention is manageable. The heavy artifact (audio) carries a short
