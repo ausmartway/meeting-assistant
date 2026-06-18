@@ -31,13 +31,36 @@ public final class SpeakerSampler {
 
         // 2. Score each tile's border for the active-speaker highlight; pick the best.
         let scored = tiles.map { (rect: $0, score: highlightScore(of: $0, in: image, extent: extent)) }
-        guard let active = scored.max(by: { $0.score < $1.score }), active.score > highlightThreshold else {
+        let region: CGRect
+        if let active = scored.max(by: { $0.score < $1.score }), active.score > highlightThreshold {
+            // A clear active-speaker highlight → read that tile.
+            region = active.rect
+        } else if let dominant = Self.dominantTile(tiles) {
+            // No highlight, but one tile clearly dominates the frame — a 1-on-1 or
+            // speaker view where the lone remote participant has no "speaking ring".
+            // Read their name anyway (the user's #1 reason names were never picked up).
+            region = dominant
+        } else {
+            // A quiet gallery of similar tiles: who's named is ambiguous → skip.
             return SpeakerSample(timestamp: timestamp, speakerName: nil)
         }
 
-        // 3. OCR the name label inside the active tile.
-        let name = await recognizeName(in: pixelBuffer, regionOfInterest: active.rect)
+        // 3. OCR the name label inside the chosen tile.
+        let name = await recognizeName(in: pixelBuffer, regionOfInterest: region)
         return SpeakerSample(timestamp: timestamp, speakerName: name)
+    }
+
+    /// The single tile that clearly dominates the frame (a 1-on-1 / speaker view),
+    /// or nil when tiles are similar-sized (a gallery, where no highlight means the
+    /// active speaker is genuinely ambiguous). A lone tile is dominant; otherwise
+    /// the largest must be at least 1.5× the area of the next-largest.
+    static func dominantTile(_ tiles: [CGRect]) -> CGRect? {
+        let sorted = tiles.sorted { $0.width * $0.height > $1.width * $1.height }
+        guard let largest = sorted.first else { return nil }
+        guard sorted.count > 1 else { return largest }
+        let secondArea = sorted[1].width * sorted[1].height
+        let largestArea = largest.width * largest.height
+        return largestArea >= 1.5 * secondArea ? largest : nil
     }
 
     // MARK: - Tiles
