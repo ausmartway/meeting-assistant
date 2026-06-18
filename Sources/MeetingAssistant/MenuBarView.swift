@@ -112,6 +112,12 @@ struct MenuBarView: View {
                 } label: {
                     Label("Stop & Transcribe", systemImage: "stop.circle")
                 }
+                if let warning = state.captureWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 // Start the next calendared meeting, when there is one.
                 if let next = state.upcoming.first {

@@ -44,6 +44,10 @@ final class AppState: ObservableObject {
     @Published private(set) var recordings: [MeetingRecording] = []
     @Published var lastError: String?
 
+    /// A non-fatal problem with the *current* live recording (e.g. the microphone
+    /// is producing no audio). Shown while recording; cleared on start/stop.
+    @Published var captureWarning: String?
+
     /// Post-meeting progress for the UI: a 0...1 fraction during model download
     /// (nil otherwise) and a stage label ("Downloading model…", "Transcribing…").
     @Published private(set) var progressFraction: Double?
@@ -297,7 +301,13 @@ final class AppState: ObservableObject {
     func startCapture(for meeting: Meeting) async {
         guard recording == nil else { return }
         lastError = nil
+        captureWarning = nil
         let session = CaptureSession(meeting: meeting, store: store)
+        // Surface live capture problems (e.g. the mic producing no audio on AirPods)
+        // so the user can fix the device mid-meeting instead of finding out after.
+        session.onWarning = { [weak self] message in
+            Task { @MainActor in self?.handleCaptureWarning(message) }
+        }
         do {
             try await session.start()
             capture = session
@@ -307,11 +317,20 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Show a live-capture warning in the UI and (if granted) as a notification,
+    /// since the user is usually looking at the meeting, not the app.
+    private func handleCaptureWarning(_ message: String) {
+        guard recording != nil else { return }   // ignore late warnings after stop
+        captureWarning = message
+        postNotification(title: "Recording issue", body: message)
+    }
+
     /// Stop the active capture and hand the meeting to the transcription queue.
     /// Returns immediately so the user can start recording again right away;
     /// transcription drains serially in the background.
     func stopCapture() async {
         guard let meeting = recording, let session = capture else { return }
+        captureWarning = nil
         do {
             try await session.stop()
             capture = nil
