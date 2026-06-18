@@ -103,7 +103,7 @@ struct MainWindowView: View {
         } else if let id = selection,
             let rec = state.recordings.first(where: { $0.meeting.id == id })
         {
-            MeetingDetailView(recording: rec)
+            MeetingDetailView(recording: rec, requestDelete: { pendingDelete = rec })
         } else if state.recordings.isEmpty {
             firstMeetingPrompt
         } else {
@@ -315,6 +315,8 @@ private struct RecordingDetailView: View {
 private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
+    /// Ask the window to start its delete-confirmation flow for this recording.
+    let requestDelete: () -> Void
     @State private var didCopy = false
     @State private var editingTitle = false
     @State private var titleDraft = ""
@@ -408,25 +410,38 @@ private struct MeetingDetailView: View {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 didCopy = false
             }
-            Menu {
-                Button("Save to File…") {
-                    saveToFile(transcript ?? "", suggestedName: recording.meeting.title)
-                }
-                .disabled(transcript == nil)
-                Button("Show in Finder") {
-                    let url = state.transcriptURL(for: recording)
-                    NSWorkspace.shared.selectFile(
-                        url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-                }
-                .disabled(transcript == nil)
-                Divider()
-                Button("Make Transcript Again") { Task { await state.reprocess(recording) } }
-                    .disabled(!state.modelReady || !state.hasAudio(for: recording))
+
+            Button {
+                saveToFile(transcript ?? "", suggestedName: recording.meeting.title)
             } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                Label("Save", systemImage: "square.and.arrow.down")
             }
-            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(transcript == nil)
+
+            Button {
+                let url = state.transcriptURL(for: recording)
+                NSWorkspace.shared.selectFile(
+                    url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+            } label: {
+                Label("Reveal", systemImage: "folder")
+            }
+            .disabled(transcript == nil)
+
+            Button {
+                Task { await state.reprocess(recording) }
+            } label: {
+                Label("Make Again", systemImage: "arrow.clockwise")
+            }
+            .disabled(!state.modelReady || !state.hasAudio(for: recording))
+            .help("Make the transcript again")
+
+            Button(role: .destructive) {
+                requestDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
+        .buttonStyle(.bordered)
         .labelStyle(.titleAndIcon)
     }
 
@@ -437,7 +452,8 @@ private struct MeetingDetailView: View {
                     ProgressView(value: fraction) {
                         Text(state.progressPhase ?? "Transcribing…").font(.caption)
                     }
-                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(Int(fraction * 100))%" + (state.progressETA.map { " · \($0)" } ?? ""))
+                        .font(.caption2).foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)

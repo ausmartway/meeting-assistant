@@ -56,6 +56,15 @@ final class AppState: ObservableObject {
     @Published private(set) var progressFraction: Double?
     @Published private(set) var progressPhase: String?
 
+    /// A rough "time remaining" label for the in-flight transcription (e.g.
+    /// "~2 min left"), or nil when no stable estimate is available yet. Detail pane only.
+    @Published private(set) var progressETA: String?
+
+    /// Estimator state + clock for the current transcription. `eta` smooths the
+    /// remaining-time; `transcriptionStartedAt` is when the current meeting began.
+    private var eta = TranscriptionETA()
+    private var transcriptionStartedAt: Date?
+
     /// Model readiness — the transcription model is downloaded + loaded at launch,
     /// and processing is gated on it being ready.
     @Published private(set) var modelReady = false
@@ -389,6 +398,8 @@ final class AppState: ObservableObject {
                 processing.finishCurrent()
                 progressFraction = nil
                 progressPhase = nil
+                progressETA = nil
+                transcriptionStartedAt = nil
             }
             drainTask = nil
         }
@@ -406,6 +417,10 @@ final class AppState: ObservableObject {
         else {
             return
         }
+        // Start the time-remaining clock for this meeting.
+        transcriptionStartedAt = Date()
+        eta.reset()
+        progressETA = nil
         // Diarization requires the user to have enrolled their voice — otherwise
         // their own mic audio would be split off as "Speaker 2" instead of "Me",
         // a worse result than today's blanket "Me". Without enrollment we fall back
@@ -419,8 +434,17 @@ final class AppState: ObservableObject {
         )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
-                self?.progressFraction = fraction
-                self?.progressPhase = phase
+                guard let self else { return }
+                self.progressFraction = fraction
+                self.progressPhase = phase
+                // Only a real transcription fraction yields a time estimate; model
+                // download / coarse 0→1 (Parakeet) / pre-first-segment leave it nil.
+                if let fraction, let start = self.transcriptionStartedAt {
+                    self.progressETA = self.eta.update(
+                        elapsed: Date().timeIntervalSince(start), fraction: fraction)
+                } else {
+                    self.progressETA = nil
+                }
             }
         }
         do {
