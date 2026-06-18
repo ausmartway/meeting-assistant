@@ -1,5 +1,5 @@
-import SwiftUI
 import MeetingKit
+import SwiftUI
 
 /// Settings: permissions status + re-grant, and transcription model selection.
 struct SettingsView: View {
@@ -11,6 +11,7 @@ struct SettingsView: View {
             speakersTab.tabItem { Label("Speakers", systemImage: "person.2.wave.2") }
             permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }
             modelsTab.tabItem { Label("Models", systemImage: "cpu") }
+            storageTab.tabItem { Label("Storage", systemImage: "internaldrive") }
         }
         .frame(width: 460, height: 360)
         .task { await state.permissions.refresh() }
@@ -20,18 +21,23 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
-            Toggle("Show icon in the Dock", isOn: Binding(
-                get: { state.settings.showDockIcon },
-                set: { state.settings.showDockIcon = $0 }
-            ))
+            Toggle(
+                "Show icon in the Dock",
+                isOn: Binding(
+                    get: { state.settings.showDockIcon },
+                    set: { state.settings.showDockIcon = $0 }
+                )
+            )
             .onChange(of: state.settings.showDockIcon) {
                 state.applyDockIconSetting()
             }
-            Text("Keeps a Dock icon so you can always open Meeting Assistant — even "
-                 + "when the menu-bar icon is hidden because the menu bar is full "
-                 + "(for example on a laptop screen with a notch). Turn off for a "
-                 + "menu-bar-only app.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(
+                "Keeps a Dock icon so you can always open Meeting Assistant — even "
+                    + "when the menu-bar icon is hidden because the menu bar is full "
+                    + "(for example on a laptop screen with a notch). Turn off for a "
+                    + "menu-bar-only app."
+            )
+            .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
     }
@@ -41,20 +47,26 @@ struct SettingsView: View {
     private var speakersTab: some View {
         Form {
             Section("In-room speakers") {
-                Toggle("Identify multiple in-room speakers", isOn: Binding(
-                    get: { state.settings.identifyInRoomSpeakers },
-                    set: { state.settings.identifyInRoomSpeakers = $0 }
-                ))
-                Text("When several people share a room, separate each voice instead "
-                     + "of labeling everyone \u{2018}Me\u{2019}.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(
+                    "Identify multiple in-room speakers",
+                    isOn: Binding(
+                        get: { state.settings.identifyInRoomSpeakers },
+                        set: { state.settings.identifyInRoomSpeakers = $0 }
+                    ))
+                Text(
+                    "When several people share a room, separate each voice instead "
+                        + "of labeling everyone \u{2018}Me\u{2019}."
+                )
+                .font(.caption).foregroundStyle(.secondary)
 
                 // Gentle hint (not a hard block): without an enrolled voiceprint the
                 // diarizer can't tell which voice is the local user.
                 if state.settings.identifyInRoomSpeakers && !state.settings.isEnrolled {
-                    Label("Record your voice below so your own speech can be told apart.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.orange)
+                    Label(
+                        "Record your voice below so your own speech can be told apart.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption).foregroundStyle(.orange)
                 }
             }
 
@@ -66,9 +78,11 @@ struct SettingsView: View {
             Section("Known speakers") {
                 let speakers = state.knownSpeakers()
                 if speakers.isEmpty {
-                    Text("No voices learned yet. People you meet are added "
-                         + "automatically once in-room identification is on.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        "No voices learned yet. People you meet are added "
+                            + "automatically once in-room identification is on."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 } else {
                     ForEach(speakers) { speaker in
                         SpeakerRow(speaker: speaker)
@@ -88,8 +102,10 @@ struct SettingsView: View {
         Form {
             ForEach(SetupCapability.allCases, id: \.self) { permissionRow($0) }
 
-            Text("If a switch won't turn on, open System Settings → Privacy & Security and enable Meeting Assistant there.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(
+                "If a switch won't turn on, open System Settings → Privacy & Security and enable Meeting Assistant there."
+            )
+            .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
     }
@@ -98,7 +114,8 @@ struct SettingsView: View {
         let status = state.setup.status(capability)
         return HStack {
             Image(systemName: symbol(for: status))
-                .foregroundStyle(status == .granted ? .green : (status == .denied ? .red : .secondary))
+                .foregroundStyle(
+                    status == .granted ? .green : (status == .denied ? .red : .secondary))
             Text(capability.title)
             if !capability.isRequired {
                 Text("Optional").font(.caption2).foregroundStyle(.secondary)
@@ -150,37 +167,113 @@ struct SettingsView: View {
 
             // Power-user options, collapsed by default so they don't add noise.
             DisclosureGroup("Advanced") {
-                Picker("Quality", selection: Binding(
-                    get: { state.settings.transcriptionModel },
-                    set: { state.settings.transcriptionModel = $0 }
-                )) {
-                    ForEach(TranscriptionModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                Picker(
+                    "Quality",
+                    selection: Binding(
+                        get: { state.settings.transcriptionModel },
+                        set: { state.settings.transcriptionModel = $0 }
+                    )
+                ) {
+                    ForEach(TranscriptionModel.allCases, id: \.self) {
+                        Text($0.displayName).tag($0)
+                    }
                 }
                 .onChange(of: state.settings.transcriptionModel) {
                     // Switching quality downloads a different model.
                     Task { await state.prepareModel() }
                 }
-                Text("Higher quality is more accurate but downloads a larger model "
-                     + "(up to ~1.6 GB) and transcribes a little slower.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Higher quality is more accurate but downloads a larger model "
+                        + "(up to ~1.6 GB) and transcribes a little slower."
+                )
+                .font(.caption).foregroundStyle(.secondary)
 
-                Picker("Engine", selection: Binding(
-                    get: { state.settings.transcriptionEngine },
-                    set: { state.settings.transcriptionEngine = $0 }
-                )) {
-                    ForEach(TranscriptionEngine.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                Picker(
+                    "Engine",
+                    selection: Binding(
+                        get: { state.settings.transcriptionEngine },
+                        set: { state.settings.transcriptionEngine = $0 }
+                    )
+                ) {
+                    ForEach(TranscriptionEngine.allCases, id: \.self) {
+                        Text($0.displayName).tag($0)
+                    }
                 }
                 .onChange(of: state.settings.transcriptionEngine) {
                     // Switching engines loads a different model.
                     Task { await state.prepareModel() }
                 }
-                Text("Automatic uses fast Parakeet for English/European speech and "
-                     + "WhisperKit for Mandarin and other languages. Pick a specific "
-                     + "engine to override.")
+                Text(
+                    "Automatic uses fast Parakeet for English/European speech and "
+                        + "WhisperKit for Mandarin and other languages. Pick a specific "
+                        + "engine to override."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+    }
+
+    // MARK: - Storage (retention)
+
+    // Offered retention windows; 0 == "Never".
+    private let mediaWindows: [(label: String, days: Int)] =
+        [("3 days", 3), ("7 days", 7), ("14 days", 14), ("30 days", 30), ("Never", 0)]
+    private let transcriptWindows: [(label: String, days: Int)] =
+        [("90 days", 90), ("180 days", 180), ("1 year", 365), ("Never", 0)]
+
+    private var storageTab: some View {
+        Form {
+            Section("Space used") {
+                HStack {
+                    Text("All recordings")
+                    Spacer()
+                    Text(
+                        ByteCountFormatter.string(
+                            fromByteCount: state.storageBytes, countStyle: .file)
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                Button("Clean up now") { state.cleanUpStorageNow() }
+            }
+            Section("Keep audio for") {
+                Picker(
+                    "Audio",
+                    selection: Binding(
+                        get: { state.settings.mediaRetentionDays },
+                        set: { state.settings.mediaRetentionDays = $0 }
+                    )
+                ) {
+                    ForEach(mediaWindows, id: \.days) { Text($0.label).tag($0.days) }
+                }
+                .onChange(of: state.settings.mediaRetentionDays) { _, _ in
+                    state.runRetentionSweep()
+                }
+                Text(
+                    "Recordings are large. Their audio is deleted automatically after "
+                        + "this long to free space; the transcript is kept."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Keep transcripts for") {
+                Picker(
+                    "Transcripts",
+                    selection: Binding(
+                        get: { state.settings.transcriptRetentionDays },
+                        set: { state.settings.transcriptRetentionDays = $0 }
+                    )
+                ) {
+                    ForEach(transcriptWindows, id: \.days) { Text($0.label).tag($0.days) }
+                }
+                .onChange(of: state.settings.transcriptRetentionDays) { _, _ in
+                    state.runRetentionSweep()
+                }
+                Text("Transcripts are tiny, so they can be kept much longer than the audio.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding()
+        .task { state.refreshStorageTotal() }
     }
 }
 

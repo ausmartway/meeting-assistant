@@ -1,8 +1,8 @@
-import Foundation
-import Combine
 import AppKit
-import UserNotifications
+import Combine
+import Foundation
 import MeetingKit
+import UserNotifications
 
 /// The app coordinator: owns the calendar/detector/capture/processor wiring and
 /// the observable state the UI renders. Runs the "calendar AND app detected"
@@ -42,6 +42,9 @@ final class AppState: ObservableObject {
     var isRecording: Bool { recording != nil }
     @Published private(set) var upcoming: [Meeting] = []
     @Published private(set) var recordings: [MeetingRecording] = []
+    /// Total bytes used by all saved recordings, shown in Settings → Storage and
+    /// the sidebar footer. Refreshed after sweeps, deletes, and new recordings.
+    @Published private(set) var storageBytes: Int64 = 0
     @Published var lastError: String?
 
     /// A non-fatal problem with the *current* live recording (e.g. the microphone
@@ -87,6 +90,8 @@ final class AppState: ObservableObject {
     /// Recording" on a detected meeting.
     private let notificationCoordinator = NotificationCoordinator()
     private var cancellables: Set<AnyCancellable> = []
+    /// Daily retention sweep timer (invalidated implicitly on dealloc).
+    private var retentionTimer: Timer?
 
     /// Set once the main window has been auto-opened at launch, so we only do it
     /// the first time the process runs (not every time the window's task fires).
@@ -158,6 +163,13 @@ final class AppState: ObservableObject {
             .store(in: &cancellables)
 
         Self.shared = self
+
+        // Reclaim space from old recordings at launch, then once a day while running.
+        runRetentionSweep()
+        retentionTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor in self?.runRetentionSweep() }
+        }
     }
 
     /// Request a single capability (the onboarding checklist drives this), then
@@ -165,10 +177,12 @@ final class AppState: ObservableObject {
     func grant(_ capability: SetupCapability) async {
         switch capability {
         case .screenRecording: permissions.requestScreenRecording()
-        case .microphone:       await permissions.requestMicrophone()
-        case .calendar:         await permissions.requestCalendar(); refreshUpcoming()
-        case .accessibility:    permissions.requestAccessibility()
-        case .notifications:    await permissions.requestNotifications()
+        case .microphone: await permissions.requestMicrophone()
+        case .calendar:
+            await permissions.requestCalendar()
+            refreshUpcoming()
+        case .accessibility: permissions.requestAccessibility()
+        case .notifications: await permissions.requestNotifications()
         }
     }
 
@@ -269,7 +283,8 @@ final class AppState: ObservableObject {
         // "notified" and never prompt once permission is granted.
         if postPromptNotification(
             title: "Start recording?",
-            body: "“\(meeting.title)” looks like it has started. Tap Start Recording to capture and transcribe it.",
+            body:
+                "“\(meeting.title)” looks like it has started. Tap Start Recording to capture and transcribe it.",
             meeting: meeting
         ) {
             notifiedMeetingIDs.insert(meeting.id)
@@ -281,9 +296,11 @@ final class AppState: ObservableObject {
     /// starts capture. A no-op if resolution fails or a capture is already active
     /// (`startCapture` guards `recording == nil`).
     func startCaptureFromNotification(userInfo: [AnyHashable: Any]) {
-        guard let meeting = MeetingNotification.resolve(
-            userInfo: userInfo, upcoming: upcoming, now: Date()
-        ) else { return }
+        guard
+            let meeting = MeetingNotification.resolve(
+                userInfo: userInfo, upcoming: upcoming, now: Date()
+            )
+        else { return }
         Task { await startCapture(for: meeting) }
     }
 
@@ -329,7 +346,7 @@ final class AppState: ObservableObject {
     /// Show a live-capture warning in the UI and (if granted) as a notification,
     /// since the user is usually looking at the meeting, not the app.
     private func handleCaptureWarning(_ message: String) {
-        guard recording != nil else { return }   // ignore late warnings after stop
+        guard recording != nil else { return }  // ignore late warnings after stop
         captureWarning = message
         postNotification(title: "Recording issue", body: message)
     }
@@ -385,7 +402,8 @@ final class AppState: ObservableObject {
     }
 
     private func process(_ meeting: Meeting) async {
-        guard let recording = store.allRecordings().first(where: { $0.meeting.id == meeting.id }) else {
+        guard let recording = store.allRecordings().first(where: { $0.meeting.id == meeting.id })
+        else {
             return
         }
         // Diarization requires the user to have enrolled their voice — otherwise
@@ -407,7 +425,8 @@ final class AppState: ObservableObject {
         }
         do {
             _ = try await processor.process(recording, progress: progress)
-            postNotification(title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
+            postNotification(
+                title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
         } catch is CancellationError {
             // User stopped this transcript: silent — no error banner, no "ready"
             // notification. The recording stays on disk with no transcript and can
@@ -433,6 +452,12 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// Whether a saved recording still has its audio (so it can be re-transcribed).
+    /// False once retention has expired the WAVs to save space.
+    func hasAudio(for recording: MeetingRecording) -> Bool {
+        store.hasAudio(meetingID: recording.meeting.id)
+    }
+
     /// Rename a saved recording's title (auto-naming is never perfect — this is the
     /// reliable fix). Persists the new title and keeps the transcript heading in
     /// sync. No-op for a blank or unchanged title.
@@ -454,7 +479,8 @@ final class AppState: ObservableObject {
         do {
             try store.save(updated)
             if let current = store.transcript(for: m.id) {
-                try? store.saveTranscript(TranscriptTitleEditor.retitle(current, to: trimmed), for: m.id)
+                try? store.saveTranscript(
+                    TranscriptTitleEditor.retitle(current, to: trimmed), for: m.id)
             }
             recordings = store.allRecordings()
         } catch {
@@ -483,7 +509,8 @@ final class AppState: ObservableObject {
             // Preserve the existing speaker's `isMe` flag: renaming a cluster to an
             // existing name (e.g. "Me") must not demote it to a regular speaker and
             // silently disable enrollment.
-            let isMe = KnownSpeaker.preservedIsMe(forName: newName, in: settings.speakerLibrary.all())
+            let isMe = KnownSpeaker.preservedIsMe(
+                forName: newName, in: settings.speakerLibrary.all())
             try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: isMe)
             try? store.saveSpeakerMap(map, for: meetingID)
         }
@@ -537,7 +564,8 @@ final class AppState: ObservableObject {
                 Task { @MainActor in self?.modelStatusText = p.phase }
             }
             try await diarizer.prepare(progress: onProgress)
-            guard let embedding = try await diarizer.enrollmentEmbedding(audioFile: audioFile) else {
+            guard let embedding = try await diarizer.enrollmentEmbedding(audioFile: audioFile)
+            else {
                 return false
             }
             try settings.speakerLibrary.upsert(name: "Me", embedding: embedding, isMe: true)
@@ -549,6 +577,32 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Meetings the retention sweep must skip: the live recording and everything in
+    /// the transcription queue (current + pending).
+    private var activeRetentionIDs: Set<String> {
+        var ids = Set<String>()
+        if let r = recording { ids.insert(r.id) }
+        if let c = processing.current { ids.insert(c.id) }
+        ids.formUnion(processing.pending.map(\.id))
+        return ids
+    }
+
+    /// Run the retention sweep with the user's current policy, then refresh the
+    /// recordings list and storage total. Safe to call from launch or a timer.
+    func runRetentionSweep() {
+        let result = store.sweep(
+            policy: settings.retentionPolicy, now: Date(), activeIDs: activeRetentionIDs
+        )
+        if result.bundlesDeleted > 0 { recordings = store.allRecordings() }
+        refreshStorageTotal()
+    }
+
+    /// User-triggered immediate cleanup (Settings → Storage → "Clean up now").
+    func cleanUpStorageNow() { runRetentionSweep() }
+
+    /// Recompute the published on-disk total.
+    func refreshStorageTotal() { storageBytes = store.totalSize() }
+
     /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete a
     /// meeting that's currently recording, transcribing, or queued for it.
     func deleteRecording(_ recording: MeetingRecording) {
@@ -556,6 +610,7 @@ final class AppState: ObservableObject {
         guard self.recording?.id != id, !processing.contains(id) else { return }
         try? store.delete(meetingID: id)
         recordings = store.allRecordings()
+        refreshStorageTotal()
     }
 
     /// Clear the current error banner (user tapped it, or it auto-dismissed).
@@ -568,7 +623,8 @@ final class AppState: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 
@@ -585,7 +641,8 @@ final class AppState: ObservableObject {
         content.body = body
         content.categoryIdentifier = MeetingNotification.categoryID
         content.userInfo = MeetingNotification.userInfo(for: meeting)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
         return true
     }

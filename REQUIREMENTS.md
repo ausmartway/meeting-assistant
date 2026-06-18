@@ -113,6 +113,19 @@ Silicon. It only transcribes — summarization was intentionally removed.
   saved to a file (Markdown), or revealed in Finder.
 - **R23 — Search history *(planned)*.** The user can find past meetings by searching
   name/date. *(Not yet implemented.)*
+- **R26 — Tiered retention: expire recordings, keep transcripts.** Recording audio is
+  **large**, so it is cleared automatically after its retention window (default 7
+  days). The **transcript is tiny and is kept much longer** — it survives the
+  recording it came from (default 1 year). Both windows are **user-configurable in
+  Settings → Storage with reasonable defaults** (and a "Never" option), so it works
+  out-of-the-box without setup but power users can tune or disable it. A retention
+  sweep runs at launch and daily, skipping any meeting that is recording or
+  transcribing. After a recording's audio is reclaimed, its transcript stays readable
+  in history; only "Make Transcript Again" (which needs the audio) becomes
+  unavailable, and the UI says so ("Audio cleared to save space") rather than failing
+  silently. **Recognized speakers' voiceprints are never removed** — they live in the
+  global speaker library outside any meeting folder, so cross-meeting recognition (R9)
+  survives expiry. Manual delete (R20) still removes everything immediately.
 
 ### Setup & permissions
 - **R24 — Guided first run.** On first launch the app walks the user, in plain
@@ -139,6 +152,13 @@ Silicon. It only transcribes — summarization was intentionally removed.
   the menu bar (no hunting); Settings toggles must visibly take effect.
 - **R16 — Dock app.** Ships as a Dock-first app (Dock icon on by default) while
   keeping the menu-bar item as a lightweight status + quick-record companion.
+- **R16b — Actions are visible buttons, not menus.** Actions a user performs on a
+  selected recording (Copy, Export/Save, Reveal, Make Transcript Again, Delete,
+  rename, etc.) are exposed as **clearly labeled buttons in the right-hand detail
+  pane**, not tucked into context menus, menu-bar submenus, or right-click menus.
+  Buttons are discoverable and lower-effort for end-users; hidden menus are not.
+  (Menus may still mirror an action as a convenience, but the button is the
+  primary, always-visible path.)
 
 ### Distribution
 - **R17 — Homebrew.** Installable via a Homebrew cask
@@ -185,10 +205,13 @@ Silicon. It only transcribes — summarization was intentionally removed.
   long a transcript will take and sees live progress; transcription completes within
   a reasonable multiple of the meeting length on supported Apple Silicon. *(Live
   progress exists today (R21); an explicit time estimate does not.)*
-- **N11 — Manageable storage *(planned)*.** Recordings (audio + frames + transcripts)
-  must not grow unbounded without the user's awareness; the user can see and reclaim
-  space, and long-term retention is manageable. *(Per-recording delete exists (R20);
-  a "space used" view and bulk/auto cleanup do not.)*
+- **N11 — Manageable storage.** Recordings (audio + transcripts) must not grow
+  unbounded without the user's awareness; the user can see and reclaim space, and
+  long-term retention is manageable. The heavy artifact (audio) carries a short
+  default retention and ages out automatically; lightweight transcripts are retained
+  far longer (see R26). Storage used is shown both in Settings → Storage and in the
+  main-window sidebar footer, with a "Clean up now" action and per-recording delete
+  (R20).
 - **N12 — Long meetings don't fail.** Multi-hour meetings capture and transcribe
   without running out of memory or failing; live capture stays lightweight
   throughout (see N2).

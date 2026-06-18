@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import MeetingKit
+import SwiftUI
 
 /// Main window: a native translucent sidebar of meetings and a detail pane showing
 /// the speaker-labeled transcript. Elegant, native-macOS styling (see `Theme`).
@@ -27,29 +27,45 @@ struct MainWindowView: View {
     private var meetingsSplitView: some View {
         NavigationSplitView {
             sidebarList
-            .listStyle(.sidebar)
-            .navigationTitle("Meeting Assistant")
-            .frame(minWidth: 248)
-            // Large, always-visible primary action anchored to the top of the sidebar.
-            .safeAreaInset(edge: .top) {
-                recordButton
-                    .padding(Theme.Space.s)
-                    .background(.bar)
-            }
-            .confirmationDialog(
-                "Delete this meeting?",
-                isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-                presenting: pendingDelete
-            ) { recording in
-                Button("Delete", role: .destructive) {
-                    if selection == recording.meeting.id { selection = nil }
-                    state.deleteRecording(recording)
-                    pendingDelete = nil
+                .listStyle(.sidebar)
+                .navigationTitle("Meeting Assistant")
+                .frame(minWidth: 248)
+                // Large, always-visible primary action anchored to the top of the sidebar.
+                .safeAreaInset(edge: .top) {
+                    recordButton
+                        .padding(Theme.Space.s)
+                        .background(.bar)
                 }
-                Button("Cancel", role: .cancel) { pendingDelete = nil }
-            } message: { _ in
-                Text("This permanently deletes the recording and its transcript. This can't be undone.")
-            }
+                .safeAreaInset(edge: .bottom) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "internaldrive").font(.system(size: 11))
+                        Text(
+                            "\(ByteCountFormatter.string(fromByteCount: state.storageBytes, countStyle: .file)) used"
+                        )
+                        .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(.bar)
+                }
+                .confirmationDialog(
+                    "Delete this meeting?",
+                    isPresented: Binding(
+                        get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                    presenting: pendingDelete
+                ) { recording in
+                    Button("Delete", role: .destructive) {
+                        if selection == recording.meeting.id { selection = nil }
+                        state.deleteRecording(recording)
+                        pendingDelete = nil
+                    }
+                    Button("Cancel", role: .cancel) { pendingDelete = nil }
+                } message: { _ in
+                    Text(
+                        "This permanently deletes the recording and its transcript. This can't be undone."
+                    )
+                }
         } detail: {
             detail
                 .frame(minWidth: 480)
@@ -85,7 +101,8 @@ struct MainWindowView: View {
         if let live = state.recording, selection == live.id {
             RecordingDetailView(meeting: live)
         } else if let id = selection,
-                  let rec = state.recordings.first(where: { $0.meeting.id == id }) {
+            let rec = state.recordings.first(where: { $0.meeting.id == id })
+        {
             MeetingDetailView(recording: rec)
         } else if state.recordings.isEmpty {
             firstMeetingPrompt
@@ -135,16 +152,21 @@ struct MainWindowView: View {
                 .font(.system(size: 38, weight: .light))
                 .foregroundStyle(Theme.accent)
             Text("Ready when you are").font(.title2).fontWeight(.semibold)
-            Text("Calendar meetings record automatically when you join from Zoom, Teams, or Meet. Or start one now — your audio stays on this Mac.")
-                .font(.callout).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).frame(maxWidth: 380)
-            Button { Task { await state.startAdHocCapture() } } label: {
+            Text(
+                "Calendar meetings record automatically when you join from Zoom, Teams, or Meet. Or start one now — your audio stays on this Mac."
+            )
+            .font(.callout).foregroundStyle(.secondary)
+            .multilineTextAlignment(.center).frame(maxWidth: 380)
+            Button {
+                Task { await state.startAdHocCapture() }
+            } label: {
                 Label("Record a meeting", systemImage: "record.circle")
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
             .disabled(!state.modelReady)
             if !state.modelReady {
-                Text("Preparing the transcription model…").font(.caption).foregroundStyle(.secondary)
+                Text("Preparing the transcription model…").font(.caption).foregroundStyle(
+                    .secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -153,7 +175,8 @@ struct MainWindowView: View {
 
     private var emptyDetail: some View {
         VStack(spacing: Theme.Space.s) {
-            Image(systemName: "text.bubble").font(.system(size: 34, weight: .light)).foregroundStyle(.tertiary)
+            Image(systemName: "text.bubble").font(.system(size: 34, weight: .light))
+                .foregroundStyle(.tertiary)
             Text("Select a meeting").font(.title3).fontWeight(.medium)
             Text("Pick a meeting from the sidebar to read its transcript.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -166,13 +189,17 @@ struct MainWindowView: View {
     @ViewBuilder
     private var recordButton: some View {
         if state.isRecording {
-            Button { Task { await state.stopCapture() } } label: {
+            Button {
+                Task { await state.stopCapture() }
+            } label: {
                 Label("Stop & Transcribe", systemImage: "stop.fill").frame(maxWidth: .infinity)
             }
             .tint(.red).buttonStyle(.borderedProminent).controlSize(.large)
             .help("Stop recording and make the transcript")
         } else {
-            Button { Task { await state.startAdHocCapture() } } label: {
+            Button {
+                Task { await state.startAdHocCapture() }
+            } label: {
                 Label("Record a meeting", systemImage: "record.circle").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
@@ -187,7 +214,8 @@ struct MainWindowView: View {
         if state.processing.current != nil {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text(state.progressPhase ?? "Transcribing…").font(.caption).foregroundStyle(.secondary)
+                Text(state.progressPhase ?? "Transcribing…").font(.caption).foregroundStyle(
+                    .secondary)
             }
         }
     }
@@ -219,7 +247,9 @@ struct MainWindowView: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.white)
                 Text(error).font(.callout).foregroundStyle(.white).multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
-                Button { state.dismissError() } label: {
+                Button {
+                    state.dismissError()
+                } label: {
                     Image(systemName: "xmark").foregroundStyle(.white.opacity(0.85))
                 }.buttonStyle(.plain)
             }
@@ -257,12 +287,20 @@ private struct RecordingDetailView: View {
 
     var body: some View {
         VStack(spacing: Theme.Space.l) {
-            HStack(spacing: Theme.Space.s) { PulsingDot(); SectionLabel("Recording in progress") }
-            Text(meeting.title).font(.largeTitle).fontWeight(.semibold).multilineTextAlignment(.center)
-            Text("Capturing audio. The transcript is made automatically when you stop — keep using your Mac; transcription runs afterward.")
-                .font(.callout).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).frame(maxWidth: 420)
-            Button(role: .destructive) { Task { await state.stopCapture() } } label: {
+            HStack(spacing: Theme.Space.s) {
+                PulsingDot()
+                SectionLabel("Recording in progress")
+            }
+            Text(meeting.title).font(.largeTitle).fontWeight(.semibold).multilineTextAlignment(
+                .center)
+            Text(
+                "Capturing audio. The transcript is made automatically when you stop — keep using your Mac; transcription runs afterward."
+            )
+            .font(.callout).foregroundStyle(.secondary)
+            .multilineTextAlignment(.center).frame(maxWidth: 420)
+            Button(role: .destructive) {
+                Task { await state.stopCapture() }
+            } label: {
                 Label("Stop & Transcribe", systemImage: "stop.fill")
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
@@ -300,12 +338,21 @@ private struct MeetingDetailView: View {
         let speakers = state.meetingSpeakers(for: recording)
         let provider = recording.meeting.provider?.displayName ?? "Meeting"
         let speakerText = speakers.count == 1 ? "1 speaker" : "\(speakers.count) speakers"
-        let sub = (speakers.isEmpty ? provider : "\(provider) · \(speakerText)")
+        let sub =
+            (speakers.isEmpty ? provider : "\(provider) · \(speakerText)")
             + " · " + recording.recordedAt.formatted(date: .abbreviated, time: .shortened)
         return HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
                 editableTitle
                 Text(sub).font(.subheadline).foregroundStyle(.secondary)
+                if !state.hasAudio(for: recording) {
+                    Label(
+                        "Audio cleared to save space — transcript kept. Re-transcribing isn't available.",
+                        systemImage: "externaldrive.badge.xmark"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             actions
@@ -322,7 +369,7 @@ private struct MeetingDetailView: View {
                 .font(.title2).fontWeight(.semibold)
                 .focused($titleFocused)
                 .onSubmit { commitTitle() }
-                .onExitCommand { editingTitle = false }   // Esc cancels
+                .onExitCommand { editingTitle = false }  // Esc cancels
                 .onChange(of: titleFocused) { _, focused in if !focused { commitTitle() } }
         } else {
             Text(recording.meeting.title)
@@ -349,26 +396,36 @@ private struct MeetingDetailView: View {
         let transcript = state.transcript(for: recording)
         return HStack(spacing: Theme.Space.s) {
             Button {
-                copyToClipboard(transcript ?? ""); didCopy = true
-            } label: { Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc") }
-                .disabled(transcript == nil)
-                .task(id: didCopy) {
-                    guard didCopy else { return }
-                    try? await Task.sleep(nanoseconds: 1_500_000_000); didCopy = false
-                }
+                copyToClipboard(transcript ?? "")
+                didCopy = true
+            } label: {
+                Label(
+                    didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+            }
+            .disabled(transcript == nil)
+            .task(id: didCopy) {
+                guard didCopy else { return }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                didCopy = false
+            }
             Menu {
-                Button("Save to File…") { saveToFile(transcript ?? "", suggestedName: recording.meeting.title) }
-                    .disabled(transcript == nil)
+                Button("Save to File…") {
+                    saveToFile(transcript ?? "", suggestedName: recording.meeting.title)
+                }
+                .disabled(transcript == nil)
                 Button("Show in Finder") {
                     let url = state.transcriptURL(for: recording)
-                    NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+                    NSWorkspace.shared.selectFile(
+                        url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
                 }
                 .disabled(transcript == nil)
                 Divider()
                 Button("Make Transcript Again") { Task { await state.reprocess(recording) } }
-                    .disabled(!state.modelReady)
-            } label: { Label("More", systemImage: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).fixedSize()
+                    .disabled(!state.modelReady || !state.hasAudio(for: recording))
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton).fixedSize()
         }
         .labelStyle(.titleAndIcon)
     }
@@ -377,7 +434,9 @@ private struct MeetingDetailView: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 if let fraction = state.progressFraction {
-                    ProgressView(value: fraction) { Text(state.progressPhase ?? "Transcribing…").font(.caption) }
+                    ProgressView(value: fraction) {
+                        Text(state.progressPhase ?? "Transcribing…").font(.caption)
+                    }
                     Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
@@ -434,14 +493,17 @@ private struct MarkdownText: View {
     let content: String
     init(_ content: String) { self.content = content }
     var body: some View {
-        Text((try? AttributedString(markdown: content,
-              options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-              ?? AttributedString(content))
-            .font(Theme.reading)
-            .lineSpacing(5)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.l)
+        Text(
+            (try? AttributedString(
+                markdown: content,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                ?? AttributedString(content)
+        )
+        .font(Theme.reading)
+        .lineSpacing(5)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.l)
     }
 }
 
@@ -461,13 +523,18 @@ private struct SpeakerRenameRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            SpeakerChip(text: originalLabel, isMe: originalLabel == "Me").frame(width: 96, alignment: .leading)
+            SpeakerChip(text: originalLabel, isMe: originalLabel == "Me").frame(
+                width: 96, alignment: .leading)
             TextField("Name", text: $draft)
                 .textFieldStyle(.roundedBorder).frame(maxWidth: 220)
                 .onSubmit { if canSave { onRename(draft) } }
-            Button { onRename(draft) } label: { Image(systemName: "checkmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(canSave ? Theme.accent : .secondary)
-                .disabled(!canSave).help("Save new name")
+            Button {
+                onRename(draft)
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+            }
+            .buttonStyle(.plain).foregroundStyle(canSave ? Theme.accent : .secondary)
+            .disabled(!canSave).help("Save new name")
         }
     }
 }
