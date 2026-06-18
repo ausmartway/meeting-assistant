@@ -77,8 +77,13 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Stop capturing and persist the recording metadata + speaker timeline.
     public func stop() async throws {
-        retargetTask?.cancel()
+        // Stop the re-target watcher and wait for any in-flight video rebuild to
+        // finish before tearing the streams down, so the two never race on the
+        // videoStream/videoDisplayID state.
+        let watcher = retargetTask
         retargetTask = nil
+        watcher?.cancel()
+        await watcher?.value
         if let videoStream {
             try? await videoStream.stopCapture()
         }
@@ -307,7 +312,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
             Self.log.info(
                 "Re-targeted video capture to display \(display.displayID, privacy: .public)")
         } catch {
-            Self.log.error("Video re-target failed; keeping current display")
+            Self.log.error(
+                "Video re-target failed, keeping current display: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
