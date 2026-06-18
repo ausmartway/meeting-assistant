@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import ScreenCaptureKit
+import os
 
 /// The only component that runs *during* a meeting, and it stays deliberately
 /// lightweight (cheap live capture, heavy post-processing — see the design):
@@ -32,6 +33,23 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     private let sampleQueue = DispatchQueue(label: "meetingassistant.capture.samples")
     private let outputQueue = DispatchQueue(label: "meetingassistant.capture.output")
 
+    /// Fixed format for `mic.wav` (16 kHz mono — matches `system.wav` + Whisper).
+    /// Every input buffer is converted to this before writing, so a mid-call input
+    /// change (e.g. AirPods switching A2DP↔HFP when the mic engages) can't corrupt
+    /// the file even if the hardware format changes.
+    private let micFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
+    )!
+    private var micConverter: AVAudioConverter?
+    private var configChangeObserver: NSObjectProtocol?
+    private let micStateLock = NSLock()
+    private var micFramesWritten = 0
+    private static let log = Logger(subsystem: "MeetingAssistant", category: "capture")
+
+    /// Called when live capture notices a problem the user should know about
+    /// mid-meeting (e.g. the mic is producing no audio). Wired to the app UI.
+    public var onWarning: (@Sendable (String) -> Void)?
+
     public init(meeting: Meeting, store: MeetingStore, sampler: SpeakerSampler = SpeakerSampler()) {
         self.meeting = meeting
         self.store = store
@@ -55,8 +73,13 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
             try? await stream.stopCapture()
         }
         stream = nil
+        if let configChangeObserver {
+            NotificationCenter.default.removeObserver(configChangeObserver)
+            self.configChangeObserver = nil
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
+        micConverter = nil
         micFile = nil
         systemFile = nil
 
@@ -74,18 +97,105 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     // MARK: - Microphone (AVAudioEngine)
 
     private func startMicrophoneCapture(into url: URL) throws {
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        micFile = file
+        // Write at the FIXED mic format so route/format changes during the call
+        // can't break the file; input buffers are converted to it in the tap.
+        micFile = try AVAudioFile(forWriting: url, settings: micFormat.settings)
 
-        // Plain tap (no voice processing) keeps the mic channel a clean, separate
-        // signal — exactly what the fuser needs to label the local user as "Me".
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            try? self?.micFile?.write(from: buffer)
+        // AVAudioEngine STOPS when the audio route changes — a Bluetooth device
+        // connecting, AirPods switching A2DP↔HFP as the mic engages for a call, a
+        // sample-rate change. Without handling this the mic tap goes silent for the
+        // rest of the meeting (exactly how a previous AirPods recording lost the
+        // local voice). Reconfigure + restart whenever it fires.
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: audioEngine, queue: nil
+        ) { [weak self] _ in
+            self?.handleConfigurationChange()
         }
+
+        try installMicTap()
         audioEngine.prepare()
         try audioEngine.start()
+        let fmt = audioEngine.inputNode.outputFormat(forBus: 0)
+        Self.log.info("Mic capture started; input \(fmt.sampleRate, privacy: .public) Hz, \(fmt.channelCount, privacy: .public) ch")
+        scheduleMicWatchdog()
+    }
+
+    /// (Re)build the converter for the current input format and install the tap.
+    /// Idempotent and safe to call again after a configuration change.
+    private func installMicTap() throws {
+        let input = audioEngine.inputNode
+        input.removeTap(onBus: 0)
+        let nativeFormat = input.outputFormat(forBus: 0)
+        guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
+            Self.log.error("Mic input has an invalid format (\(nativeFormat.channelCount, privacy: .public) ch, \(nativeFormat.sampleRate, privacy: .public) Hz) — no input device?")
+            onWarning?("No microphone input is available. Check your input device in System Settings → Sound.")
+            return
+        }
+        // Plain tap (no voice processing) keeps the mic a clean, separate signal —
+        // exactly what the fuser needs to label the local user as "Me". The buffer
+        // is converted to the fixed mic format before it's written.
+        micConverter = AVAudioConverter(from: nativeFormat, to: micFormat)
+        input.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, _ in
+            self?.writeMic(buffer)
+        }
+    }
+
+    private func handleConfigurationChange() {
+        Self.log.info("Audio configuration changed; reconfiguring mic capture.")
+        do {
+            try installMicTap()
+            if !audioEngine.isRunning {
+                audioEngine.prepare()
+                try audioEngine.start()
+            }
+        } catch {
+            Self.log.error("Failed to restart mic after configuration change: \(error.localizedDescription, privacy: .public)")
+            onWarning?("The microphone stopped after an audio device change and couldn't restart.")
+        }
+    }
+
+    /// Convert one input buffer to the fixed mic format and append it to `mic.wav`.
+    private func writeMic(_ buffer: AVAudioPCMBuffer) {
+        guard let converter = micConverter, let file = micFile,
+              let out = Self.convert(buffer, using: converter, to: micFormat) else { return }
+        try? file.write(from: out)
+        micStateLock.lock(); micFramesWritten += Int(out.frameLength); micStateLock.unlock()
+    }
+
+    /// Resample/convert one PCM buffer to `format` in a single shot, returning nil
+    /// if the input is empty or nothing came out. Pure (no instance state) so the
+    /// resampling that `mic.wav` depends on is unit-testable without audio hardware.
+    static func convert(
+        _ buffer: AVAudioPCMBuffer,
+        using converter: AVAudioConverter,
+        to format: AVAudioFormat
+    ) -> AVAudioPCMBuffer? {
+        guard buffer.frameLength > 0 else { return nil }
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
+        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
+        var fed = false
+        let inputBlock: AVAudioConverterInputBlock = { _, status in
+            if fed { status.pointee = .noDataNow; return nil }
+            fed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        var convertError: NSError?
+        converter.convert(to: out, error: &convertError, withInputFrom: inputBlock)
+        return out.frameLength > 0 ? out : nil
+    }
+
+    /// A few seconds in, warn if the mic has produced no audio at all — so the user
+    /// can fix their input device mid-meeting instead of discovering it afterwards.
+    private func scheduleMicWatchdog() {
+        outputQueue.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self else { return }
+            self.micStateLock.lock(); let frames = self.micFramesWritten; self.micStateLock.unlock()
+            guard frames == 0 else { return }
+            Self.log.error("Microphone produced no audio 6s into the meeting.")
+            self.onWarning?("Your microphone isn't being recorded — no audio detected. If you're on AirPods/Bluetooth, select them as the input in System Settings → Sound, then stop and start recording.")
+        }
     }
 
     // MARK: - System audio + frames (ScreenCaptureKit)
