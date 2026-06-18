@@ -111,8 +111,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
   transcript is **ready**.
 - **R22 — Export & copy.** A transcript can be copied to the clipboard as plain text,
   saved to a file (Markdown), or revealed in Finder.
-- **R23 — Search history *(planned)*.** The user can find past meetings by searching
-  name/date. *(Not yet implemented.)*
+- **R23 — Search history.** A search field on the sidebar filters past meetings as the
+  user types — matching the meeting name, its date, and the transcript text. Matching
+  runs against an in-memory index (rebuilt as recordings change; transcript text folded
+  in off the main thread), the in-progress recording stays pinned, and a clear
+  "no matches" state shows when nothing matches.
 - **R26 — Tiered retention: expire recordings, keep transcripts.** Recording audio is
   **large**, so it is cleared automatically after its retention window (default 7
   days). The **transcript is tiny and is kept much longer** — it survives the
@@ -217,9 +220,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N12 — Long meetings don't fail.** Multi-hour meetings capture and transcribe
   without running out of memory or failing; live capture stays lightweight
   throughout (see N2).
-- **N13 — Multi-display name reading *(planned)*.** On-screen name reading should also
-  work when the meeting window is on a secondary display. *(A single display is
-  assumed today.)*
+- **N13 — Multi-display name reading.** On-screen name reading works when the meeting
+  window is on a secondary display, and follows the window if it moves displays
+  mid-meeting. Video-frame capture targets the meeting's display (the conferencing
+  app's window, else the frontmost window); system-audio capture runs on its own
+  independent stream so re-targeting never interrupts it.
 
 ---
 

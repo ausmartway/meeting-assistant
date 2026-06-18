@@ -1,5 +1,7 @@
-import Foundation
 import AVFoundation
+import AppKit
+import CoreGraphics
+import Foundation
 import ScreenCaptureKit
 import os
 
@@ -22,7 +24,13 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     private let store: MeetingStore
     private let sampler: SpeakerSampler
 
-    private var stream: SCStream?
+    private var audioStream: SCStream?
+    private var videoStream: SCStream?
+    /// The display the video stream currently captures (for move detection).
+    private var videoDisplayID: CGDirectDisplayID?
+    /// Periodically re-checks which display shows the meeting and rebuilds the video
+    /// stream if it moved. Never touches the audio stream.
+    private var retargetTask: Task<Void, Never>?
     private let audioEngine = AVAudioEngine()
     private var micFile: AVAudioFile?
     private var systemFile: AVAudioFile?
@@ -69,10 +77,22 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Stop capturing and persist the recording metadata + speaker timeline.
     public func stop() async throws {
-        if let stream {
-            try? await stream.stopCapture()
+        // Stop the re-target watcher and wait for any in-flight video rebuild to
+        // finish before tearing the streams down, so the two never race on the
+        // videoStream/videoDisplayID state.
+        let watcher = retargetTask
+        retargetTask = nil
+        watcher?.cancel()
+        await watcher?.value
+        if let videoStream {
+            try? await videoStream.stopCapture()
         }
-        stream = nil
+        if let audioStream {
+            try? await audioStream.stopCapture()
+        }
+        videoStream = nil
+        audioStream = nil
+        videoDisplayID = nil
         if let configChangeObserver {
             NotificationCenter.default.removeObserver(configChangeObserver)
             self.configChangeObserver = nil
@@ -116,7 +136,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         audioEngine.prepare()
         try audioEngine.start()
         let fmt = audioEngine.inputNode.outputFormat(forBus: 0)
-        Self.log.info("Mic capture started; input \(fmt.sampleRate, privacy: .public) Hz, \(fmt.channelCount, privacy: .public) ch")
+        Self.log.info(
+            "Mic capture started; input \(fmt.sampleRate, privacy: .public) Hz, \(fmt.channelCount, privacy: .public) ch"
+        )
         scheduleMicWatchdog()
     }
 
@@ -127,15 +149,20 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         input.removeTap(onBus: 0)
         let nativeFormat = input.outputFormat(forBus: 0)
         guard nativeFormat.channelCount > 0, nativeFormat.sampleRate > 0 else {
-            Self.log.error("Mic input has an invalid format (\(nativeFormat.channelCount, privacy: .public) ch, \(nativeFormat.sampleRate, privacy: .public) Hz) — no input device?")
-            onWarning?("No microphone input is available. Check your input device in System Settings → Sound.")
+            Self.log.error(
+                "Mic input has an invalid format (\(nativeFormat.channelCount, privacy: .public) ch, \(nativeFormat.sampleRate, privacy: .public) Hz) — no input device?"
+            )
+            onWarning?(
+                "No microphone input is available. Check your input device in System Settings → Sound."
+            )
             return
         }
         // Plain tap (no voice processing) keeps the mic a clean, separate signal —
         // exactly what the fuser needs to label the local user as "Me". The buffer
         // is converted to the fixed mic format before it's written.
         micConverter = AVAudioConverter(from: nativeFormat, to: micFormat)
-        input.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) {
+            [weak self] buffer, _ in
             self?.writeMic(buffer)
         }
     }
@@ -149,7 +176,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
                 try audioEngine.start()
             }
         } catch {
-            Self.log.error("Failed to restart mic after configuration change: \(error.localizedDescription, privacy: .public)")
+            Self.log.error(
+                "Failed to restart mic after configuration change: \(error.localizedDescription, privacy: .public)"
+            )
             onWarning?("The microphone stopped after an audio device change and couldn't restart.")
         }
     }
@@ -157,9 +186,12 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Convert one input buffer to the fixed mic format and append it to `mic.wav`.
     private func writeMic(_ buffer: AVAudioPCMBuffer) {
         guard let converter = micConverter, let file = micFile,
-              let out = Self.convert(buffer, using: converter, to: micFormat) else { return }
+            let out = Self.convert(buffer, using: converter, to: micFormat)
+        else { return }
         try? file.write(from: out)
-        micStateLock.lock(); micFramesWritten += Int(out.frameLength); micStateLock.unlock()
+        micStateLock.lock()
+        micFramesWritten += Int(out.frameLength)
+        micStateLock.unlock()
     }
 
     /// Resample/convert one PCM buffer to `format` in a single shot, returning nil
@@ -173,10 +205,15 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         guard buffer.frameLength > 0 else { return nil }
         let ratio = format.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
-        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
+        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
+            return nil
+        }
         var fed = false
         let inputBlock: AVAudioConverterInputBlock = { _, status in
-            if fed { status.pointee = .noDataNow; return nil }
+            if fed {
+                status.pointee = .noDataNow
+                return nil
+            }
             fed = true
             status.pointee = .haveData
             return buffer
@@ -191,43 +228,126 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     private func scheduleMicWatchdog() {
         outputQueue.asyncAfter(deadline: .now() + 6) { [weak self] in
             guard let self else { return }
-            self.micStateLock.lock(); let frames = self.micFramesWritten; self.micStateLock.unlock()
+            self.micStateLock.lock()
+            let frames = self.micFramesWritten
+            self.micStateLock.unlock()
             guard frames == 0 else { return }
             Self.log.error("Microphone produced no audio 6s into the meeting.")
-            self.onWarning?("Your microphone isn't being recorded — no audio detected. If you're on AirPods/Bluetooth, select them as the input in System Settings → Sound, then stop and start recording.")
+            self.onWarning?(
+                "Your microphone isn't being recorded — no audio detected. If you're on AirPods/Bluetooth, select them as the input in System Settings → Sound, then stop and start recording."
+            )
         }
     }
 
     // MARK: - System audio + frames (ScreenCaptureKit)
 
     private func startSystemCapture(systemAudioURL: URL) async throws {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first else {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: true)
+        guard let primary = content.displays.first else {
             throw CaptureError.noDisplay
         }
-        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
 
+        // Audio stream: any display works (system audio is global). Started once and
+        // never re-targeted, so following the meeting across displays for video can
+        // never interrupt audio.
+        let audioFilter = SCContentFilter(
+            display: primary, excludingApplications: [], exceptingWindows: [])
+        let audioConfig = SCStreamConfiguration()
+        audioConfig.capturesAudio = true
+        audioConfig.excludesCurrentProcessAudio = true
+        audioConfig.sampleRate = 16_000
+        audioConfig.channelCount = 1
+        let audio = SCStream(filter: audioFilter, configuration: audioConfig, delegate: self)
+        try audio.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
+        self.audioStream = audio
+        try await audio.startCapture()
+
+        // Video stream: target the meeting's display (falls back to the primary).
+        let display = meetingDisplay(in: content) ?? primary
+        try await startVideoStream(on: display)
+        startRetargetWatcher()
+    }
+
+    /// Build + start a video-only stream on `display`, replacing any current one.
+    /// Make-before-break: the new stream is started *before* the old one is stopped,
+    /// so a failed start leaves the existing video capture running (and never gaps or
+    /// dies). Audio is on its own stream and is untouched either way.
+    private func startVideoStream(on display: SCDisplay) async throws {
+        let filter = SCContentFilter(
+            display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
-        config.capturesAudio = true
-        config.excludesCurrentProcessAudio = true   // don't record our own output
-        config.sampleRate = 16_000                   // matches Whisper's expected input
-        config.channelCount = 1
-        // Modest video — we only sample a frame every few seconds for OCR.
+        config.capturesAudio = false
         config.width = 1280
         config.height = 720
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 2) // ~2 fps ceiling
-
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 2)  // ~2 fps ceiling
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
-        self.stream = stream
-
         try await stream.startCapture()
+
+        // New stream is live — retire the previous one and record the switch.
+        let old = videoStream
+        videoStream = stream
+        videoDisplayID = display.displayID
+        if let old {
+            try? await old.stopCapture()
+        }
+    }
+
+    /// Every ~5 s, if the meeting has moved to a different display, rebuild the
+    /// video stream there. Best-effort: any failure leaves the current stream running.
+    private func startRetargetWatcher() {
+        retargetTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if Task.isCancelled { return }
+                await self?.retargetVideoIfMoved()
+            }
+        }
+    }
+
+    private func retargetVideoIfMoved() async {
+        guard
+            let content = try? await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: true)
+        else { return }
+        guard let display = meetingDisplay(in: content) else { return }  // not found → keep current
+        guard display.displayID != videoDisplayID else { return }  // unchanged → nothing to do
+        do {
+            try await startVideoStream(on: display)
+            Self.log.info(
+                "Re-targeted video capture to display \(display.displayID, privacy: .public)")
+        } catch {
+            Self.log.error(
+                "Video re-target failed, keeping current display: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    /// Choose the SCDisplay showing the meeting via the pure `DisplaySelector`.
+    private func meetingDisplay(in content: SCShareableContent) -> SCDisplay? {
+        let windows = content.windows.map { w in
+            ScreenWindow(
+                frame: w.frame,
+                bundleID: w.owningApplication?.bundleIdentifier,
+                pid: w.owningApplication?.processID ?? 0)
+        }
+        let displays = content.displays.map { ScreenDisplay(id: $0.displayID, frame: $0.frame) }
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let chosen = DisplaySelector.pickDisplay(
+            windows: windows, displays: displays,
+            preferredBundleIDs: meeting.provider?.meetingAppBundleIDs ?? [],
+            frontmostPID: frontPID)
+        guard let chosen else { return nil }
+        return content.displays.first { $0.displayID == chosen }
     }
 
     // MARK: - SCStreamOutput
 
-    public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    public func stream(
+        _ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
         switch type {
         case .audio:
             handleSystemAudio(sampleBuffer)
