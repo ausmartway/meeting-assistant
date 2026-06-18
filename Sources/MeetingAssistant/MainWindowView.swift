@@ -278,6 +278,8 @@ private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
     @State private var didCopy = false
+    @State private var renaming = false
+    @State private var renameText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -322,18 +324,29 @@ private struct MeetingDetailView: View {
                     try? await Task.sleep(nanoseconds: 1_500_000_000); didCopy = false
                 }
             Menu {
+                Button("Rename…") { renameText = recording.meeting.title; renaming = true }
+                Divider()
                 Button("Save to File…") { saveToFile(transcript ?? "", suggestedName: recording.meeting.title) }
+                    .disabled(transcript == nil)
                 Button("Show in Finder") {
                     let url = state.transcriptURL(for: recording)
                     NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
                 }
+                .disabled(transcript == nil)
                 Divider()
                 Button("Make Transcript Again") { Task { await state.reprocess(recording) } }
                     .disabled(!state.modelReady)
             } label: { Label("More", systemImage: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).fixedSize().disabled(transcript == nil)
+                .menuStyle(.borderlessButton).fixedSize()
         }
         .labelStyle(.titleAndIcon)
+        .alert("Rename recording", isPresented: $renaming) {
+            TextField("Title", text: $renameText)
+            Button("Save") { state.renameRecording(recording, to: renameText) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Give this recording a clearer name.")
+        }
     }
 
     private var progressRow: some View {
