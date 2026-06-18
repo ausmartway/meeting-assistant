@@ -278,8 +278,9 @@ private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
     @State private var didCopy = false
-    @State private var renaming = false
-    @State private var renameText = ""
+    @State private var editingTitle = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -303,13 +304,45 @@ private struct MeetingDetailView: View {
             + " · " + recording.recordedAt.formatted(date: .abbreviated, time: .shortened)
         return HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(recording.meeting.title).font(.title2).fontWeight(.semibold)
+                editableTitle
                 Text(sub).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
             actions
         }
         .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.m)
+    }
+
+    /// The meeting title, editable in place: click it to rename (no menus). Commits
+    /// on Enter or when focus leaves; Esc cancels.
+    @ViewBuilder private var editableTitle: some View {
+        if editingTitle {
+            TextField("Title", text: $titleDraft)
+                .textFieldStyle(.plain)
+                .font(.title2).fontWeight(.semibold)
+                .focused($titleFocused)
+                .onSubmit { commitTitle() }
+                .onExitCommand { editingTitle = false }   // Esc cancels
+                .onChange(of: titleFocused) { _, focused in if !focused { commitTitle() } }
+        } else {
+            Text(recording.meeting.title)
+                .font(.title2).fontWeight(.semibold)
+                .contentShape(Rectangle())
+                .onTapGesture { startEditingTitle() }
+                .help("Click to rename")
+        }
+    }
+
+    private func startEditingTitle() {
+        titleDraft = recording.meeting.title
+        editingTitle = true
+        titleFocused = true
+    }
+
+    private func commitTitle() {
+        guard editingTitle else { return }
+        editingTitle = false
+        state.renameRecording(recording, to: titleDraft)
     }
 
     private var actions: some View {
@@ -324,8 +357,6 @@ private struct MeetingDetailView: View {
                     try? await Task.sleep(nanoseconds: 1_500_000_000); didCopy = false
                 }
             Menu {
-                Button("Rename…") { renameText = recording.meeting.title; renaming = true }
-                Divider()
                 Button("Save to File…") { saveToFile(transcript ?? "", suggestedName: recording.meeting.title) }
                     .disabled(transcript == nil)
                 Button("Show in Finder") {
@@ -340,13 +371,6 @@ private struct MeetingDetailView: View {
                 .menuStyle(.borderlessButton).fixedSize()
         }
         .labelStyle(.titleAndIcon)
-        .alert("Rename recording", isPresented: $renaming) {
-            TextField("Title", text: $renameText)
-            Button("Save") { state.renameRecording(recording, to: renameText) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Give this recording a clearer name.")
-        }
     }
 
     private var progressRow: some View {
