@@ -28,6 +28,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     private var videoStream: SCStream?
     /// The display the video stream currently captures (for move detection).
     private var videoDisplayID: CGDirectDisplayID?
+    /// Periodically re-checks which display shows the meeting and rebuilds the video
+    /// stream if it moved. Never touches the audio stream.
+    private var retargetTask: Task<Void, Never>?
     private let audioEngine = AVAudioEngine()
     private var micFile: AVAudioFile?
     private var systemFile: AVAudioFile?
@@ -74,6 +77,8 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Stop capturing and persist the recording metadata + speaker timeline.
     public func stop() async throws {
+        retargetTask?.cancel()
+        retargetTask = nil
         if let videoStream {
             try? await videoStream.stopCapture()
         }
@@ -256,6 +261,7 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         // Video stream: target the meeting's display (falls back to the primary).
         let display = meetingDisplay(in: content) ?? primary
         try await startVideoStream(on: display)
+        startRetargetWatcher()
     }
 
     /// Build + start a video-only stream on `display`, replacing any current one.
@@ -275,6 +281,34 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         self.videoStream = stream
         self.videoDisplayID = display.displayID
         try await stream.startCapture()
+    }
+
+    /// Every ~5 s, if the meeting has moved to a different display, rebuild the
+    /// video stream there. Best-effort: any failure leaves the current stream running.
+    private func startRetargetWatcher() {
+        retargetTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if Task.isCancelled { return }
+                await self?.retargetVideoIfMoved()
+            }
+        }
+    }
+
+    private func retargetVideoIfMoved() async {
+        guard
+            let content = try? await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: true)
+        else { return }
+        guard let display = meetingDisplay(in: content) else { return }  // not found → keep current
+        guard display.displayID != videoDisplayID else { return }  // unchanged → nothing to do
+        do {
+            try await startVideoStream(on: display)
+            Self.log.info(
+                "Re-targeted video capture to display \(display.displayID, privacy: .public)")
+        } catch {
+            Self.log.error("Video re-target failed; keeping current display")
+        }
     }
 
     /// Choose the SCDisplay showing the meeting via the pure `DisplaySelector`.
