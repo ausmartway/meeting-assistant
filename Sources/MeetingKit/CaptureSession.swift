@@ -270,10 +270,10 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     /// Build + start a video-only stream on `display`, replacing any current one.
+    /// Make-before-break: the new stream is started *before* the old one is stopped,
+    /// so a failed start leaves the existing video capture running (and never gaps or
+    /// dies). Audio is on its own stream and is untouched either way.
     private func startVideoStream(on display: SCDisplay) async throws {
-        if let old = videoStream {
-            try? await old.stopCapture()
-        }
         let filter = SCContentFilter(
             display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
@@ -283,11 +283,15 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         config.minimumFrameInterval = CMTime(value: 1, timescale: 2)  // ~2 fps ceiling
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
-        // Record the new stream only once it has actually started, so a failed
-        // start never leaves a never-started stream as the current videoStream.
         try await stream.startCapture()
-        self.videoStream = stream
-        self.videoDisplayID = display.displayID
+
+        // New stream is live — retire the previous one and record the switch.
+        let old = videoStream
+        videoStream = stream
+        videoDisplayID = display.displayID
+        if let old {
+            try? await old.stopCapture()
+        }
     }
 
     /// Every ~5 s, if the meeting has moved to a different display, rebuild the
