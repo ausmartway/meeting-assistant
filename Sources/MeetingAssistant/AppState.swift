@@ -292,8 +292,17 @@ final class AppState: ObservableObject {
     /// the detected provider when a native client is running.
     func startAdHocCapture() async {
         guard recording == nil else { return }
-        let provider = detector.firstRunningProvider()
-        let meeting = Meeting.adHoc(id: "adhoc-\(UUID().uuidString)", provider: provider, start: Date())
+        // If a calendar meeting is happening right now, record it under its real
+        // invite subject rather than a generic ad-hoc name.
+        refreshUpcoming()
+        if let current = upcoming.first(where: { detector.isInProgress($0) }) {
+            await startCapture(for: current)
+            return
+        }
+        // Otherwise a generic ad-hoc recording (renameable in the GUI). We do NOT
+        // guess the provider from a running app — Teams/Zoom/browsers run all day,
+        // so "app is running" falsely labels in-room recordings as a meeting.
+        let meeting = Meeting.adHoc(id: "adhoc-\(UUID().uuidString)", provider: nil, start: Date())
         await startCapture(for: meeting)
     }
 

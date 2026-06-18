@@ -17,6 +17,16 @@ public enum MeetingProvider: String, Codable, Sendable, CaseIterable {
         case .webex: return "Webex"
         }
     }
+
+    /// Short label for compact contexts (e.g. an ad-hoc meeting title).
+    public var shortName: String {
+        switch self {
+        case .zoom: return "Zoom"
+        case .googleMeet: return "Meet"
+        case .microsoftTeams: return "Teams"
+        case .webex: return "Webex"
+        }
+    }
 }
 
 /// A calendar meeting we may capture. Built from an EKEvent by `CalendarWatcher`,
@@ -57,7 +67,7 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
     ) -> Meeting {
         Meeting(
             id: id,
-            title: provider.map { "\($0.displayName) meeting" } ?? "Ad-hoc meeting",
+            title: provider.map { "ad-hoc \($0.shortName)" } ?? "ad-hoc meeting",
             startDate: start,
             endDate: start.addingTimeInterval(duration),
             provider: provider,

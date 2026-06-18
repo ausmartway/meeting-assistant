@@ -38,6 +38,17 @@ struct MeetingDetectorTests {
         #expect(!MeetingDetector.isWithinWindow(m, now: Date(timeIntervalSince1970: 5000), grace: 120))
     }
 
+    @Test("isInProgress: true during, within grace, false before grace / after end")
+    func isInProgress() {
+        let det = MeetingDetector()
+        let m = meeting(start: 10_000, end: 13_600)   // 1h meeting, grace default 300
+        #expect(det.isInProgress(m, now: Date(timeIntervalSince1970: 10_600)))   // 10 min in
+        #expect(det.isInProgress(m, now: Date(timeIntervalSince1970: 9_800)))    // 200s before, within 300 grace
+        #expect(!det.isInProgress(m, now: Date(timeIntervalSince1970: 9_600)))   // 400s before, beyond grace
+        #expect(!det.isInProgress(m, now: Date(timeIntervalSince1970: 13_600)))  // exactly at end
+        #expect(!det.isInProgress(m, now: Date(timeIntervalSince1970: 20_000)))  // after
+    }
+
     @Test("a meeting with no provider never auto-starts")
     func noProvider() {
         let m = Meeting(id: "m", title: "Sync",
