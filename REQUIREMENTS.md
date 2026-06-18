@@ -217,9 +217,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N12 — Long meetings don't fail.** Multi-hour meetings capture and transcribe
   without running out of memory or failing; live capture stays lightweight
   throughout (see N2).
-- **N13 — Multi-display name reading *(planned)*.** On-screen name reading should also
-  work when the meeting window is on a secondary display. *(A single display is
-  assumed today.)*
+- **N13 — Multi-display name reading.** On-screen name reading works when the meeting
+  window is on a secondary display, and follows the window if it moves displays
+  mid-meeting. Video-frame capture targets the meeting's display (the conferencing
+  app's window, else the frontmost window); system-audio capture runs on its own
+  independent stream so re-targeting never interrupts it.
 
 ---
 
