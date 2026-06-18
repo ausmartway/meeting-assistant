@@ -283,9 +283,11 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         config.minimumFrameInterval = CMTime(value: 1, timescale: 2)  // ~2 fps ceiling
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
+        // Record the new stream only once it has actually started, so a failed
+        // start never leaves a never-started stream as the current videoStream.
+        try await stream.startCapture()
         self.videoStream = stream
         self.videoDisplayID = display.displayID
-        try await stream.startCapture()
     }
 
     /// Every ~5 s, if the meeting has moved to a different display, rebuild the
