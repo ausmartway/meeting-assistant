@@ -437,7 +437,8 @@ private struct MeetingDetailView: View {
                     ProgressView(value: fraction) {
                         Text(state.progressPhase ?? "Transcribing…").font(.caption)
                     }
-                    Text("\(Int(fraction * 100))%").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(Int(fraction * 100))%" + (state.progressETA.map { " · \($0)" } ?? ""))
+                        .font(.caption2).foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
