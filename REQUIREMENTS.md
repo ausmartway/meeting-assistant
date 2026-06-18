@@ -51,27 +51,36 @@ Silicon. It only transcribes — summarization was intentionally removed.
   The app does **not** infer the provider from a merely-running app (Teams / Zoom /
   browsers run all day, which previously mislabeled in-room recordings as "Microsoft
   Teams meeting").
-- **R3d — Rename a recording.** Any recording can be **renamed from the GUI**
-  (transcript detail → More → Rename). Auto-naming is best-effort; rename is the
-  reliable correction, and it keeps the saved transcript heading in sync.
+- **R3d — Rename a recording inline.** The user can rename a recording by **clicking
+  its title and editing it in place** — no menus or dialogs. Auto-naming is
+  best-effort; inline rename is the reliable correction, and it keeps the saved
+  transcript heading in sync.
+- **R1c — Visible recording state.** While recording, the app shows a clear,
+  persistent indicator that capture is active (menu-bar icon + status, and in the
+  main window), so the user is never unsure whether a meeting is being recorded.
+- **R3e — Preserve interrupted recordings *(planned)*.** If the app quits or the Mac
+  sleeps mid-recording, the audio captured so far is preserved and can still be
+  transcribed rather than lost. *(Not yet implemented.)*
 
 ### Transcription quality
-- **R4 — Readable transcripts.** Transcripts must be clean. Whisper artifacts —
-  especially repetition-loop garbage (walls of one repeated character/word such as
-  `$$$$…` or `LAUGHTER LAUGHTER…`) — must be filtered out, alongside the existing
-  silence/stock-phrase hallucinations.
-- **R5 — Multilingual, auto-routed by language.** The default engine is **Automatic**:
-  it detects each channel's language and routes English/European speech to fast
-  **Parakeet** (NVIDIA, via FluidAudio) and Mandarin / other / uncertain to
-  **WhisperKit** (multilingual Whisper, no `.en` variants). English **and** Mandarin
-  stay first-class — Mandarin always goes to WhisperKit, since Parakeet is
-  English/European-only. WhisperKit-only and Parakeet-only are also selectable in
-  Settings (see `docs/decisions/2026-06-17-transcription-engine.md`).
+- **R4 — Readable transcripts.** Transcripts must read like real speech. Garbled or
+  repeated runs (walls of one repeated character or word, e.g. `$$$$…` or
+  `LAUGHTER LAUGHTER…`) and made-up filler during silence are removed.
+- **R5 — Multilingual, automatic by default.** Transcription runs **locally** and, by
+  default, **automatically uses the fastest engine that can handle each speaker's
+  language** — so English (and other European languages) transcribe much faster while
+  **Mandarin, and anything it's unsure about, stay accurate**. English and Mandarin
+  are both first-class. Advanced users can force a specific engine in Settings; the
+  Settings options are described by what they do for the user (speed vs.
+  broad-language accuracy), not by internal model names. (Engine details:
+  `docs/decisions/2026-06-17-transcription-engine.md`.)
 
 ### Speakers
-- **R6 — In-room speaker separation.** When the user is physically in a room with
-  other people (all arriving on the single mic channel), the app separates the
-  distinct in-room voices instead of labeling everyone "Me".
+- **R6 — In-room speaker separation (best-effort).** When the user is physically in
+  a room with other people (all arriving on the single mic channel), the app
+  **attempts to** separate the distinct in-room voices instead of labeling everyone
+  "Me". This works only once the user has enrolled their own voice (R7) and is
+  best-effort — it degrades to a single "Me" when it can't separate confidently.
 - **R7 — "Me" via enrollment.** The user enrolls their own voice once by **reading
   an on-screen script** during initial setup (and re-doable in Settings); their
   enrolled voice is labeled "Me", others become "Speaker 2", "Speaker 3", ….
@@ -84,10 +93,35 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R10 — Conservative matching.** Only **confident** voice matches are auto-named;
   weak matches stay anonymous rather than risk the wrong name.
 - **R10b — Best-effort on-screen names.** When a remote participant's name is shown
-  on screen, the app reads it (Vision OCR) to label them — including a **single**
-  remote participant with no active-speaker highlight (a 1-on-1 / speaker view).
-  This is best-effort (varies by app/theme/layout) and degrades to "Speaker";
-  rename (R8) is always the reliable fallback.
+  on screen, the app reads that on-screen name label to identify them — including a
+  **single** remote participant with no active-speaker highlight (a 1-on-1 / speaker
+  view). This is best-effort (it varies by app, theme, and layout) and degrades to
+  "Speaker"; renaming (R8) is always the reliable fallback. The UI should set this
+  expectation so an unnamed speaker doesn't read as a failure.
+
+### Transcripts, history & management
+- **R19 — Persistent history.** Finished meetings are saved and listed in the main
+  window (most recent first) and remain available across app restarts; selecting one
+  reopens its transcript.
+- **R20 — Delete a recording.** The user can delete a recording — its audio, sampled
+  frames, and transcript — from the GUI (with confirmation), which frees the disk
+  space it used.
+- **R21 — Progress & "ready".** The app shows transcription progress per meeting
+  (current stage, and how many are queued behind it) and notifies the user when a
+  transcript is **ready**.
+- **R22 — Export & copy.** A transcript can be copied to the clipboard as plain text,
+  saved to a file (Markdown), or revealed in Finder.
+- **R23 — Search history *(planned)*.** The user can find past meetings by searching
+  name/date. *(Not yet implemented.)*
+
+### Setup & permissions
+- **R24 — Guided first run.** On first launch the app walks the user, in plain
+  language, through approving the app (the one-time Gatekeeper "Open Anyway" on
+  macOS 15+), granting the permissions it needs (Microphone, Screen & System Audio,
+  Calendar, Notifications, Accessibility), and enrolling their voice.
+- **R25 — Clear permission state, never silent.** If a required permission is missing
+  or denied, the app clearly says what is blocked and offers a direct path to the
+  correct System Settings pane; core actions never fail silently.
 
 ### Interface (elegant, native macOS Dock app)
 - **R11 — Elegant, easy-to-use, native.** The GUI is a refined, native-macOS Dock
@@ -147,6 +181,20 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N9 — Production-quality polish.** Clean, distinctive, non-generic UI;
   thoughtful empty/loading/error states; clear copy. Light **and** dark mode both
   look native.
+- **N10 — Communicated turnaround *(planned)*.** The user gets a rough sense of how
+  long a transcript will take and sees live progress; transcription completes within
+  a reasonable multiple of the meeting length on supported Apple Silicon. *(Live
+  progress exists today (R21); an explicit time estimate does not.)*
+- **N11 — Manageable storage *(planned)*.** Recordings (audio + frames + transcripts)
+  must not grow unbounded without the user's awareness; the user can see and reclaim
+  space, and long-term retention is manageable. *(Per-recording delete exists (R20);
+  a "space used" view and bulk/auto cleanup do not.)*
+- **N12 — Long meetings don't fail.** Multi-hour meetings capture and transcribe
+  without running out of memory or failing; live capture stays lightweight
+  throughout (see N2).
+- **N13 — Multi-display name reading *(planned)*.** On-screen name reading should also
+  work when the meeting window is on a secondary display. *(A single display is
+  assumed today.)*
 
 ---
 
