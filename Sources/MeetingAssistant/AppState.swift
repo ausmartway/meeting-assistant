@@ -452,6 +452,12 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// Whether a saved recording still has its audio (so it can be re-transcribed).
+    /// False once retention has expired the WAVs to save space.
+    func hasAudio(for recording: MeetingRecording) -> Bool {
+        store.hasAudio(meetingID: recording.meeting.id)
+    }
+
     /// Rename a saved recording's title (auto-naming is never perfect — this is the
     /// reliable fix). Persists the new title and keeps the transcript heading in
     /// sync. No-op for a blank or unchanged title.
