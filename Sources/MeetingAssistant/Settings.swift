@@ -40,6 +40,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(identifyInRoomSpeakers, forKey: Keys.identifyInRoomSpeakers) }
     }
 
+    /// Days to keep heavy audio before auto-deleting it. `0` means "Never".
+    /// Default 7 (see RetentionPolicy.default / spec R26).
+    @Published var mediaRetentionDays: Int {
+        didSet { defaults.set(mediaRetentionDays, forKey: Keys.mediaRetentionDays) }
+    }
+
+    /// Days to keep the whole bundle (incl. transcript) before deleting it. `0`
+    /// means "Never". Default 365.
+    @Published var transcriptRetentionDays: Int {
+        didSet { defaults.set(transcriptRetentionDays, forKey: Keys.transcriptRetentionDays) }
+    }
+
     private let defaults: UserDefaults
 
     /// The on-disk library of known speakers (voiceprints + names), shared across
@@ -52,29 +64,45 @@ final class AppSettings: ObservableObject {
         static let transcriptionWorkers = "transcriptionWorkers"
         static let showDockIcon = "showDockIcon"
         static let identifyInRoomSpeakers = "identifyInRoomSpeakers"
+        static let mediaRetentionDays = "mediaRetentionDays"
+        static let transcriptRetentionDays = "transcriptRetentionDays"
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.transcriptionModel = TranscriptionModel(
-            rawValue: defaults.string(forKey: Keys.transcriptionModel) ?? ""
-        ) ?? .largeTurbo
+        self.transcriptionModel =
+            TranscriptionModel(
+                rawValue: defaults.string(forKey: Keys.transcriptionModel) ?? ""
+            ) ?? .largeTurbo
         // Automatic by default: routes each channel to the fastest engine that
         // handles its language (Parakeet for English/European, WhisperKit for
         // Mandarin/other). See docs/decisions/2026-06-17-transcription-engine.md.
-        self.transcriptionEngine = TranscriptionEngine(
-            rawValue: defaults.string(forKey: Keys.transcriptionEngine) ?? ""
-        ) ?? .auto
-        let stored = defaults.integer(forKey: Keys.transcriptionWorkers) // 0 when unset
+        self.transcriptionEngine =
+            TranscriptionEngine(
+                rawValue: defaults.string(forKey: Keys.transcriptionEngine) ?? ""
+            ) ?? .auto
+        let stored = defaults.integer(forKey: Keys.transcriptionWorkers)  // 0 when unset
         self.transcriptionWorkers = Self.workerRange.contains(stored) ? stored : 4
         // Default ON the first time (key absent); respect the user's choice after.
-        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) == nil
+        self.showDockIcon =
+            defaults.object(forKey: Keys.showDockIcon) == nil
             ? true
             : defaults.bool(forKey: Keys.showDockIcon)
         self.identifyInRoomSpeakers = defaults.bool(forKey: Keys.identifyInRoomSpeakers)
+        self.mediaRetentionDays =
+            defaults.object(forKey: Keys.mediaRetentionDays) == nil
+            ? 7 : defaults.integer(forKey: Keys.mediaRetentionDays)
+        self.transcriptRetentionDays =
+            defaults.object(forKey: Keys.transcriptRetentionDays) == nil
+            ? 365 : defaults.integer(forKey: Keys.transcriptRetentionDays)
 
-        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) ?? FileManager.default.temporaryDirectory
-        self.speakerLibrary = SpeakerLibrary(url: base.appendingPathComponent("MeetingAssistant/speakers.json"))
+        let base =
+            (try? FileManager.default.url(
+                for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
+                create: true))
+            ?? FileManager.default.temporaryDirectory
+        self.speakerLibrary = SpeakerLibrary(
+            url: base.appendingPathComponent("MeetingAssistant/speakers.json"))
     }
 
     /// Build the on-device transcriber for the selected engine.
@@ -94,4 +122,14 @@ final class AppSettings: ObservableObject {
     /// Whether the local user has enrolled their own voice (so their mic segments
     /// can be labeled "Me" by the diarizer).
     var isEnrolled: Bool { speakerLibrary.me != nil }
+
+    /// The retention policy derived from the user's settings. `0 days` → `nil`
+    /// (never expire) for that window.
+    var retentionPolicy: RetentionPolicy {
+        func age(_ days: Int) -> TimeInterval? { days <= 0 ? nil : TimeInterval(days) * 86_400 }
+        return RetentionPolicy(
+            mediaMaxAge: age(mediaRetentionDays),
+            transcriptMaxAge: age(transcriptRetentionDays)
+        )
+    }
 }
