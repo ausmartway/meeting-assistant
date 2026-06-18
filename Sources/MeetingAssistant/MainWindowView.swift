@@ -103,7 +103,7 @@ struct MainWindowView: View {
         } else if let id = selection,
             let rec = state.recordings.first(where: { $0.meeting.id == id })
         {
-            MeetingDetailView(recording: rec)
+            MeetingDetailView(recording: rec, requestDelete: { pendingDelete = rec })
         } else if state.recordings.isEmpty {
             firstMeetingPrompt
         } else {
@@ -315,6 +315,8 @@ private struct RecordingDetailView: View {
 private struct MeetingDetailView: View {
     @EnvironmentObject private var state: AppState
     let recording: MeetingRecording
+    /// Ask the window to start its delete-confirmation flow for this recording.
+    let requestDelete: () -> Void
     @State private var didCopy = false
     @State private var editingTitle = false
     @State private var titleDraft = ""
