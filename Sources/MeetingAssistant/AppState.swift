@@ -41,7 +41,18 @@ final class AppState: ObservableObject {
     /// True while a capture session is active (drives the record/stop control).
     var isRecording: Bool { recording != nil }
     @Published private(set) var upcoming: [Meeting] = []
-    @Published private(set) var recordings: [MeetingRecording] = []
+    @Published private(set) var recordings: [MeetingRecording] = [] {
+        didSet { rebuildSearchIndex() }
+    }
+
+    /// Per-meeting lowercased search haystack (title + date + transcript), used by the
+    /// sidebar search field. Rebuilt whenever `recordings` changes; transcript text is
+    /// folded in off the main thread.
+    @Published private(set) var searchIndex: [String: String] = [:]
+
+    /// In-flight transcript-indexing task, cancelled when a newer rebuild starts.
+    private var searchIndexTask: Task<Void, Never>?
+
     /// Total bytes used by all saved recordings, shown in Settings → Storage and
     /// the sidebar footer. Refreshed after sweeps, deletes, and new recordings.
     @Published private(set) var storageBytes: Int64 = 0
@@ -179,6 +190,8 @@ final class AppState: ObservableObject {
             [weak self] _ in
             Task { @MainActor in self?.runRetentionSweep() }
         }
+        // didSet does not fire for assignments inside init; build the index explicitly.
+        rebuildSearchIndex()
     }
 
     /// Request a single capability (the onboarding checklist drives this), then
@@ -626,6 +639,32 @@ final class AppState: ObservableObject {
 
     /// Recompute the published on-disk total.
     func refreshStorageTotal() { storageBytes = store.totalSize() }
+
+    /// Rebuild the search index for the current recordings. The cheap title+date pass
+    /// publishes immediately so search works at once; transcript text is read off the
+    /// main thread and folded in when ready. A newer rebuild cancels an older one.
+    private func rebuildSearchIndex() {
+        searchIndexTask?.cancel()
+        let recs = recordings
+        var base: [String: String] = [:]
+        var urls: [(id: String, url: URL)] = []
+        for rec in recs {
+            base[rec.meeting.id] = MeetingSearch.baseHaystack(for: rec)
+            urls.append((rec.meeting.id, store.transcriptURL(for: rec.meeting.id)))
+        }
+        searchIndex = base
+        searchIndexTask = Task.detached { [weak self, base, urls] in
+            var full = base
+            for (id, url) in urls {
+                if Task.isCancelled { return }
+                if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+                    full[id, default: ""] += " " + text.lowercased()
+                }
+            }
+            if Task.isCancelled { return }
+            await MainActor.run { self?.searchIndex = full }
+        }
+    }
 
     /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete a
     /// meeting that's currently recording, transcribing, or queued for it.

@@ -111,8 +111,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
   transcript is **ready**.
 - **R22 — Export & copy.** A transcript can be copied to the clipboard as plain text,
   saved to a file (Markdown), or revealed in Finder.
-- **R23 — Search history *(planned)*.** The user can find past meetings by searching
-  name/date. *(Not yet implemented.)*
+- **R23 — Search history.** A search field on the sidebar filters past meetings as the
+  user types — matching the meeting name, its date, and the transcript text. Matching
+  runs against an in-memory index (rebuilt as recordings change; transcript text folded
+  in off the main thread), the in-progress recording stays pinned, and a clear
+  "no matches" state shows when nothing matches.
 - **R26 — Tiered retention: expire recordings, keep transcripts.** Recording audio is
   **large**, so it is cleared automatically after its retention window (default 7
   days). The **transcript is tiny and is kept much longer** — it survives the
