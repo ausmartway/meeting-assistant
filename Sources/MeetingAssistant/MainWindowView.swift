@@ -36,6 +36,19 @@ struct MainWindowView: View {
                         .padding(Theme.Space.s)
                         .background(.bar)
                 }
+                .safeAreaInset(edge: .bottom) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "internaldrive").font(.system(size: 11))
+                        Text(
+                            "\(ByteCountFormatter.string(fromByteCount: state.storageBytes, countStyle: .file)) used"
+                        )
+                        .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(.bar)
+                }
                 .confirmationDialog(
                     "Delete this meeting?",
                     isPresented: Binding(
