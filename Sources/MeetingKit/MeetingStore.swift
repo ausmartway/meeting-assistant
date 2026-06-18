@@ -161,6 +161,45 @@ public final class MeetingStore {
         return total
     }
 
+    /// Apply a retention policy across every meeting bundle. Bundle deletion
+    /// (transcript window) takes precedence over media expiry. Skips any meeting in
+    /// `activeIDs` (recording or transcribing now). Operates ONLY on directories
+    /// that contain a `recording.json`, so the root-level global `speakers.json`
+    /// (the cross-meeting voiceprint library) is structurally never touched.
+    public func sweep(policy: RetentionPolicy, now: Date, activeIDs: Set<String>) -> RetentionSweepResult {
+        var result = RetentionSweepResult()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let dirs = try? fileManager.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil
+        ) else { return result }
+
+        for dir in dirs {
+            // Only valid meeting bundles — a directory with a decodable recording.json.
+            let recordingJSON = dir.appendingPathComponent("recording.json")
+            guard let data = try? Data(contentsOf: recordingJSON),
+                  let rec = try? decoder.decode(MeetingRecording.self, from: data) else { continue }
+            let id = rec.meeting.id
+            guard !activeIDs.contains(id) else { continue }
+
+            if policy.shouldDeleteBundle(recordedAt: rec.recordedAt, now: now) {
+                let size = directorySize(dir)
+                try? fileManager.removeItem(at: dir)
+                result.bundlesDeleted += 1
+                result.bytesReclaimed += size
+            } else if policy.shouldExpireMedia(recordedAt: rec.recordedAt, now: now) {
+                let before = directorySize(dir)
+                expireMedia(meetingID: id)
+                let reclaimed = before - directorySize(dir)
+                if reclaimed > 0 {
+                    result.mediaExpired += 1
+                    result.bytesReclaimed += reclaimed
+                }
+            }
+        }
+        return result
+    }
+
     // MARK: - Private utilities
 
     /// Keep meeting ids filesystem-safe (EKEvent identifiers can contain slashes).

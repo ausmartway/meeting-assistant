@@ -62,4 +62,61 @@ import Foundation
         // Both WAV sets (3_000 + 1_000) plus small json/md overhead.
         #expect(store.totalSize() >= 4_000)
     }
+
+    @Test func sweepExpiresMediaButKeepsTranscriptInMediaWindow() throws {
+        let (store, _) = try makeStore()
+        let now = Date()
+        let dir = try seed(store, id: "old", recordedAt: now.addingTimeInterval(-8 * 86_400))
+        let policy = RetentionPolicy(mediaMaxAge: 7 * 86_400, transcriptMaxAge: 365 * 86_400)
+        let result = store.sweep(policy: policy, now: now, activeIDs: [])
+        #expect(result.mediaExpired == 1)
+        #expect(result.bundlesDeleted == 0)
+        #expect(store.hasAudio(meetingID: "old") == false)
+        #expect(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("transcript.md").path) == true)
+    }
+
+    @Test func sweepDeletesWholeBundlePastTranscriptWindow() throws {
+        let (store, _) = try makeStore()
+        let now = Date()
+        let dir = try seed(store, id: "ancient", recordedAt: now.addingTimeInterval(-400 * 86_400))
+        let policy = RetentionPolicy(mediaMaxAge: 7 * 86_400, transcriptMaxAge: 365 * 86_400)
+        let result = store.sweep(policy: policy, now: now, activeIDs: [])
+        #expect(result.bundlesDeleted == 1)
+        #expect(FileManager.default.fileExists(atPath: dir.path) == false)
+    }
+
+    @Test func sweepSkipsActiveMeetings() throws {
+        let (store, _) = try makeStore()
+        let now = Date()
+        try seed(store, id: "busy", recordedAt: now.addingTimeInterval(-8 * 86_400))
+        let policy = RetentionPolicy(mediaMaxAge: 7 * 86_400, transcriptMaxAge: 365 * 86_400)
+        let result = store.sweep(policy: policy, now: now, activeIDs: ["busy"])
+        #expect(result.mediaExpired == 0)
+        #expect(store.hasAudio(meetingID: "busy") == true)
+    }
+
+    // The critical invariant: the global SpeakerLibrary lives as a root-level
+    // `speakers.json` FILE (not a bundle dir). The sweep must never touch it.
+    @Test func sweepNeverTouchesRootLevelSpeakerLibrary() throws {
+        let (store, root) = try makeStore()
+        let now = Date()
+        let globalLib = root.appendingPathComponent("speakers.json")
+        try Data("voiceprints".utf8).write(to: globalLib)
+        try seed(store, id: "ancient", recordedAt: now.addingTimeInterval(-400 * 86_400))
+        let policy = RetentionPolicy(mediaMaxAge: 7 * 86_400, transcriptMaxAge: 365 * 86_400)
+        _ = store.sweep(policy: policy, now: now, activeIDs: [])
+        #expect(FileManager.default.fileExists(atPath: globalLib.path) == true)
+        #expect(try String(contentsOf: globalLib, encoding: .utf8) == "voiceprints")
+    }
+
+    @Test func sweepWithinAllWindowsDoesNothing() throws {
+        let (store, _) = try makeStore()
+        let now = Date()
+        try seed(store, id: "fresh", recordedAt: now.addingTimeInterval(-1 * 86_400))
+        let policy = RetentionPolicy(mediaMaxAge: 7 * 86_400, transcriptMaxAge: 365 * 86_400)
+        let result = store.sweep(policy: policy, now: now, activeIDs: [])
+        #expect(result == RetentionSweepResult())
+        #expect(store.hasAudio(meetingID: "fresh") == true)
+    }
 }
