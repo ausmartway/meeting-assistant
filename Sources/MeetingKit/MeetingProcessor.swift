@@ -44,12 +44,19 @@ public final class MeetingProcessor {
 
         let started = Date()
 
-        // 1. Transcribe each channel (carrying the channel through onto segments).
-        //    The transcriber serializes its shared model download/load internally.
+        // 1. Transcribe each channel (carrying the channel through onto segments),
+        //    one channel at a time. Running both channels concurrently doubled the
+        //    peak number of in-flight CoreML/Metal predictions (each channel already
+        //    decodes VAD chunks in parallel), which under GPU/memory pressure could
+        //    trip an MPSGraph assertion that aborts the app. Post-meeting processing
+        //    is the cheap-to-be-slow path, so we serialize the channels for stability.
         let onProgress: TranscribeProgressHandler = { p in progress?(p.fraction, p.phase) }
-        async let micSegments = transcriber.transcribe(audioFile: micURL, channel: .microphone, progress: onProgress)
-        async let systemSegments = transcriber.transcribe(audioFile: systemURL, channel: .system, progress: onProgress)
-        let allSegments = try await (micSegments + systemSegments)
+        let micSegments = try await transcriber.transcribe(
+            audioFile: micURL, channel: .microphone, progress: onProgress)
+        try Task.checkCancellation()
+        let systemSegments = try await transcriber.transcribe(
+            audioFile: systemURL, channel: .system, progress: onProgress)
+        let allSegments = (micSegments + systemSegments)
             .sorted { $0.start < $1.start }
 
         // The user may have stopped this transcript while the (cancellation-
@@ -66,8 +73,10 @@ public final class MeetingProcessor {
         do {
             outcome = try await diarizer.diarize(audioFile: micURL, progress: onProgress)
         } catch {
-            outcome = DiarizationOutcome(spans: [], embeddings: [:])   // non-fatal — keep today's "Me" labeling
-            Self.log.error("Diarization failed, falling back to single speaker: \(error.localizedDescription, privacy: .public)")
+            outcome = DiarizationOutcome(spans: [], embeddings: [:])  // non-fatal — keep today's "Me" labeling
+            Self.log.error(
+                "Diarization failed, falling back to single speaker: \(error.localizedDescription, privacy: .public)"
+            )
         }
 
         // Second checkpoint: stop before fusing/formatting/saving if cancelled
@@ -90,7 +99,8 @@ public final class MeetingProcessor {
         //     speakers can be renamed later without re-diarizing. Best-effort.
         if !outcome.spans.isEmpty {
             try? store.saveSpeakerMap(
-                MeetingSpeakerMap(labelByCluster: micLabels, embeddingByCluster: outcome.embeddings),
+                MeetingSpeakerMap(
+                    labelByCluster: micLabels, embeddingByCluster: outcome.embeddings),
                 for: recording.meeting.id
             )
         }
