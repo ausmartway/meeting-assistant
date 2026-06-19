@@ -10,11 +10,20 @@ public enum SpeakerRecognizer {
     /// voiceprint is clearly close, so we don't put the wrong name on someone.
     public static let defaultThreshold: Float = 0.40
 
+    /// A match must beat the nearest *different* known speaker by at least this much
+    /// (cosine distance) to be trusted. Without it, a noisy / over-segmented
+    /// voiceprint sitting almost equidistant between two enrolled people grabs
+    /// whichever name it's marginally closer to — the cause of a real mislabel where
+    /// a fragment of the user's own voice (0.244 from "Larry", 0.274 from "Me") was
+    /// named "Larry". A confident match clears this margin comfortably (~0.4+).
+    public static let defaultMargin: Float = 0.10
+
     /// Returns clusterID → display label ("Me", "Sam", "Speaker 2", …).
     public static func resolve(
         outcome: DiarizationOutcome,
         knownSpeakers: [KnownSpeaker],
-        threshold: Float = defaultThreshold
+        threshold: Float = defaultThreshold,
+        margin: Float = defaultMargin
     ) -> [String: String] {
         // Order of first appearance across the spans (stable, deterministic).
         var seen = Set<String>()
@@ -27,7 +36,9 @@ public enum SpeakerRecognizer {
         // Pass 1: each cluster's nearest known speaker within threshold (or nil).
         var match: [String: (name: String, distance: Float)] = [:]
         for cluster in clustersInOrder {
-            if let m = bestMatch(outcome.embeddings[cluster] ?? [], knownSpeakers, threshold) {
+            if let m = bestMatch(
+                outcome.embeddings[cluster] ?? [], knownSpeakers, threshold, margin)
+            {
                 match[cluster] = m
             }
         }
@@ -35,9 +46,11 @@ public enum SpeakerRecognizer {
         // A known name must map to at most ONE cluster — the closest. Other
         // clusters that matched the same name fall back to anonymous, so we never
         // print two "Sam" turns (which would also confuse the rename/relearn flow).
-        var winnerForName: [String: String] = [:]   // name → winning cluster id
+        var winnerForName: [String: String] = [:]  // name → winning cluster id
         for (cluster, m) in match {
-            if let current = winnerForName[m.name], let cur = match[current], cur.distance <= m.distance {
+            if let current = winnerForName[m.name], let cur = match[current],
+                cur.distance <= m.distance
+            {
                 continue
             }
             winnerForName[m.name] = cluster
@@ -61,18 +74,28 @@ public enum SpeakerRecognizer {
         return labels
     }
 
-    /// The nearest known speaker within `threshold` (name + distance), or nil.
+    /// The nearest known speaker (name + distance), or nil — but only when the match
+    /// is *confident*: within `threshold`, and at least `margin` closer than the
+    /// nearest known speaker with a different name. The margin rejects ambiguous
+    /// voiceprints that sit between two enrolled people (a wrong name is worse than
+    /// an anonymous "Speaker N").
     private static func bestMatch(
-        _ embedding: [Float], _ known: [KnownSpeaker], _ threshold: Float
+        _ embedding: [Float], _ known: [KnownSpeaker], _ threshold: Float, _ margin: Float
     ) -> (name: String, distance: Float)? {
-        var best: (name: String, distance: Float)? = nil
-        for speaker in known {
-            let distance = VoiceMatch.cosineDistance(embedding, speaker.embedding)
-            if best == nil || distance < best!.distance {
-                best = (speaker.name, distance)
-            }
+        let scored = known.map {
+            (name: $0.name, distance: VoiceMatch.cosineDistance(embedding, $0.embedding))
         }
-        guard let best, best.distance <= threshold else { return nil }
+        guard let best = scored.min(by: { $0.distance < $1.distance }),
+            best.distance <= threshold
+        else { return nil }
+        // The real competitor is the nearest speaker with a DIFFERENT name; the best
+        // must clear it by `margin` to be trusted. (No different-named speaker means a
+        // single identity in the library — threshold alone decides.)
+        if let runnerUp = scored.filter({ $0.name != best.name }).min(by: {
+            $0.distance < $1.distance
+        }), runnerUp.distance - best.distance < margin {
+            return nil
+        }
         return best
     }
 }
