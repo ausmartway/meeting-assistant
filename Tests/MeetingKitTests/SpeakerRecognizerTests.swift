@@ -1,14 +1,18 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite("SpeakerRecognizer")
 struct SpeakerRecognizerTests {
     private func outcome(_ pairs: [(String, [Float])]) -> DiarizationOutcome {
-        var spans: [DiarizedSpan] = []; var emb: [String: [Float]] = [:]
+        var spans: [DiarizedSpan] = []
+        var emb: [String: [Float]] = [:]
         var t = 0.0
         for (id, e) in pairs {
-            spans.append(DiarizedSpan(start: t, end: t + 1, speakerID: id)); emb[id] = e; t += 1
+            spans.append(DiarizedSpan(start: t, end: t + 1, speakerID: id))
+            emb[id] = e
+            t += 1
         }
         return DiarizationOutcome(spans: spans, embeddings: emb)
     }
@@ -61,7 +65,21 @@ struct SpeakerRecognizerTests {
             outcome: outcome([("c0", [0.9, 0.1, 0]), ("c1", [1, 0, 0])]),
             knownSpeakers: lib, threshold: 0.3)
         #expect(labels.values.filter { $0 == "Sam" }.count == 1)
-        #expect(labels["c1"] == "Sam")        // closer cluster wins the name
+        #expect(labels["c1"] == "Sam")  // closer cluster wins the name
         #expect(labels["c0"] == "Speaker 2")  // the other falls back to anonymous
+    }
+
+    @Test("ambiguous match between two known speakers stays anonymous")
+    func ambiguousMatchIsAnonymous() {
+        // c0 sits almost equidistant between Larry and Me (both well within the
+        // threshold, only ~0.014 apart) — like a noisy / over-segmented voiceprint.
+        // A confident match must clearly beat the runner-up, so this must NOT grab
+        // "Larry" (the real-world bug: a fragment of the user's own voice was named
+        // after a different person it happened to be marginally closer to).
+        let lib = [known("Larry", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [1, 0, 0])]),
+            knownSpeakers: lib, threshold: 0.4)
+        #expect(labels["c0"] == "Speaker 2")
     }
 }
