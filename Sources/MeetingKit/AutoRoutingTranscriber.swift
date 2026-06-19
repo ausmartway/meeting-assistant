@@ -20,9 +20,15 @@ public actor AutoRoutingTranscriber: Transcribing {
     }
 
     public func prepare(progress: TranscribeProgressHandler?) async throws {
-        // The detector (WhisperKit) is always needed — for detection and for any
-        // non-Parakeet channel. Parakeet is prepared on first use.
-        try await whisper.prepare(progress: progress)
+        // Warm only the small language detector at launch — it's always needed and
+        // cheap. The big transcription model (`whisper`) and Parakeet are loaded
+        // lazily on first use, so launch never compiles the ~1.6 GB model (which on
+        // some setups is a multi-minute Neural-Engine compile, and on the GPU path
+        // aborts entirely). A channel routed to WhisperKit (Mandarin / uncertain)
+        // pays that load once, only when it actually occurs.
+        if let preparable = detector as? Transcribing {
+            try await preparable.prepare(progress: progress)
+        }
     }
 
     public func setConcurrentWorkers(_ count: Int) async {
@@ -37,7 +43,8 @@ public actor AutoRoutingTranscriber: Transcribing {
         let detected = try? await detector.detectLanguage(audioFile: audioFile)
         switch EngineRouter.route(detected: detected) {
         case .whisperKit:
-            return try await whisper.transcribe(audioFile: audioFile, channel: channel, progress: progress)
+            return try await whisper.transcribe(
+                audioFile: audioFile, channel: channel, progress: progress)
         case .parakeet(let code):
             if !parakeetPrepared {
                 try await parakeet.prepare(progress: progress)
