@@ -58,9 +58,11 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R1c — Visible recording state.** While recording, the app shows a clear,
   persistent indicator that capture is active (menu-bar icon + status, and in the
   main window), so the user is never unsure whether a meeting is being recorded.
-- **R3e — Preserve interrupted recordings *(planned)*.** If the app quits or the Mac
-  sleeps mid-recording, the audio captured so far is preserved and can still be
-  transcribed rather than lost. *(Not yet implemented.)*
+- **R3e — Preserve interrupted recordings *(deprioritized)*.** If the app quits or the
+  Mac sleeps mid-recording, the audio captured so far is preserved and can still be
+  transcribed rather than lost. *(Deliberately deprioritized by the owner — not worth
+  the cost/complexity of crash-safe incremental capture right now, since mid-recording
+  app/Mac death is rare. Revisit only if it proves to happen in practice.)*
 
 ### Transcription quality
 - **R4 — Readable transcripts.** Transcripts must read like real speech. Garbled or
