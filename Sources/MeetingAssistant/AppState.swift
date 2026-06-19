@@ -192,6 +192,10 @@ final class AppState: ObservableObject {
         }
         // didSet does not fire for assignments inside init; build the index explicitly.
         rebuildSearchIndex()
+
+        // Default/migrate the enrolled local user's name to the configured display
+        // name (e.g. an old "Me" enrollment becomes "Yulei Liu").
+        try? settings.speakerLibrary.setLocalUserName(settings.localUserName)
     }
 
     /// Request a single capability (the onboarding checklist drives this), then
@@ -443,7 +447,8 @@ final class AppState: ObservableObject {
             store: store,
             transcriber: transcriber,
             diarizer: useDiar ? diarizer : StubDiarizer(),
-            knownSpeakers: useDiar ? settings.speakerLibrary.all() : []
+            knownSpeakers: useDiar ? settings.speakerLibrary.all() : [],
+            localUserName: settings.localUserName
         )
         let progress: MeetingProcessor.ProcessProgress = { [weak self] fraction, phase in
             Task { @MainActor in
@@ -574,6 +579,17 @@ final class AppState: ObservableObject {
     /// The known speakers in the shared library (for Settings management).
     func knownSpeakers() -> [KnownSpeaker] { settings.speakerLibrary.all() }
 
+    /// Normalize + apply the local-user display name after the user finishes editing it:
+    /// blank falls back to the account name, then "Me"; the enrolled library entry is
+    /// re-synced so the voiceprint stays tied to the shown name. Future transcripts use
+    /// the new name; past transcripts are unchanged.
+    func applyLocalUserName() {
+        settings.localUserName = LocalUserName.resolve(
+            override: settings.localUserName, accountName: NSFullUserName())
+        try? settings.speakerLibrary.setLocalUserName(settings.localUserName)
+        objectWillChange.send()
+    }
+
     /// Rename a known speaker in the library (Settings). Does not rewrite past
     /// transcripts — only affects future recognition and the library listing.
     func renameKnownSpeaker(id: UUID, to newName: String) {
@@ -605,7 +621,8 @@ final class AppState: ObservableObject {
             else {
                 return false
             }
-            try settings.speakerLibrary.upsert(name: "Me", embedding: embedding, isMe: true)
+            try settings.speakerLibrary.upsert(
+                name: settings.localUserName, embedding: embedding, isMe: true)
             objectWillChange.send()
             return true
         } catch {
