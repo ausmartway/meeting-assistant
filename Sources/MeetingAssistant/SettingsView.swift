@@ -46,6 +46,21 @@ struct SettingsView: View {
 
     private var speakersTab: some View {
         Form {
+            Section("Your name") {
+                TextField(
+                    "Display name",
+                    text: Binding(
+                        get: { state.settings.localUserName },
+                        set: { state.settings.localUserName = $0 }
+                    )
+                )
+                .onSubmit { state.applyLocalUserName() }
+                Text(
+                    "Shown instead of \u{201C}Me\u{201D} in transcripts. Defaults to your Mac account name."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("In-room speakers") {
                 Toggle(
                     "Identify multiple in-room speakers",
