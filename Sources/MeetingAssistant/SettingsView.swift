@@ -56,7 +56,7 @@ struct SettingsView: View {
                 )
                 .onSubmit { state.applyLocalUserName() }
                 Text(
-                    "Shown instead of \u{201C}Me\u{201D} in transcripts. Defaults to your Mac account name."
+                    "Used instead of \u{201C}Me\u{201D} in new transcripts. Defaults to your Mac account name; already-made transcripts keep their labels."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
