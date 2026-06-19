@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite struct MeetingStoreRetentionTests {
@@ -13,14 +14,19 @@ import Foundation
     // Write a full bundle (recording.json + both WAVs + transcript) for a meeting
     // recorded `recordedAt`.
     @discardableResult
-    func seed(_ store: MeetingStore, id: String, recordedAt: Date,
-              micBytes: Int = 1_000, systemBytes: Int = 2_000) throws -> URL {
+    func seed(
+        _ store: MeetingStore, id: String, recordedAt: Date,
+        micBytes: Int = 1_000, systemBytes: Int = 2_000
+    ) throws -> URL {
         let dir = try store.directory(for: id)
-        let meeting = Meeting(id: id, title: "M", startDate: recordedAt, endDate: recordedAt,
-                              provider: nil, joinURL: nil)
-        try store.save(MeetingRecording(meeting: meeting, recordedAt: recordedAt,
-            micAudioFile: "mic.wav", systemAudioFile: "system.wav",
-            timeline: SpeakerTimeline(samples: [])))
+        let meeting = Meeting(
+            id: id, title: "M", startDate: recordedAt, endDate: recordedAt,
+            provider: nil, joinURL: nil)
+        try store.save(
+            MeetingRecording(
+                meeting: meeting, recordedAt: recordedAt,
+                micAudioFile: "mic.wav", systemAudioFile: "system.wav",
+                timeline: SpeakerTimeline(samples: [])))
         try store.saveTranscript("# M\n\ntranscript", for: id)
         try Data(count: micBytes).write(to: dir.appendingPathComponent("mic.wav"))
         try Data(count: systemBytes).write(to: dir.appendingPathComponent("system.wav"))
@@ -51,7 +57,7 @@ import Foundation
         let (store, _) = try makeStore()
         try seed(store, id: "a", recordedAt: Date())
         store.expireMedia(meetingID: "a")
-        store.expireMedia(meetingID: "a") // must not throw or crash
+        store.expireMedia(meetingID: "a")  // must not throw or crash
         #expect(store.hasAudio(meetingID: "a") == false)
     }
 
@@ -72,8 +78,9 @@ import Foundation
         #expect(result.mediaExpired == 1)
         #expect(result.bundlesDeleted == 0)
         #expect(store.hasAudio(meetingID: "old") == false)
-        #expect(FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("transcript.md").path) == true)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dir.appendingPathComponent("transcript.md").path) == true)
     }
 
     @Test func sweepDeletesWholeBundlePastTranscriptWindow() throws {
@@ -118,5 +125,28 @@ import Foundation
         let result = store.sweep(policy: policy, now: now, activeIDs: [])
         #expect(result == RetentionSweepResult())
         #expect(store.hasAudio(meetingID: "fresh") == true)
+    }
+
+    @Test func deleteSpeakerMapRemovesOnlyTheMap() throws {
+        let (store, _) = try makeStore()
+        let dir = try seed(store, id: "m", recordedAt: Date())
+        try store.saveSpeakerMap(
+            MeetingSpeakerMap(
+                labelByCluster: ["S1": "Larry Song"], embeddingByCluster: ["S1": [1]]),
+            for: "m")
+        #expect(store.speakerMap(for: "m") != nil)
+        store.deleteSpeakerMap(for: "m")
+        #expect(store.speakerMap(for: "m") == nil)
+        let fm = FileManager.default
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("recording.json").path))
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("transcript.md").path))
+        #expect(store.hasAudio(meetingID: "m") == true)
+    }
+
+    @Test func deleteSpeakerMapIsNoopWhenAbsent() throws {
+        let (store, _) = try makeStore()
+        try seed(store, id: "m", recordedAt: Date())
+        store.deleteSpeakerMap(for: "m")
+        #expect(store.speakerMap(for: "m") == nil)
     }
 }

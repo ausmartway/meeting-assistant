@@ -50,7 +50,8 @@ public final class MeetingStore {
     /// Write the speaker-labeled transcript markdown.
     public func saveTranscript(_ markdown: String, for meetingID: String) throws {
         let dir = try directory(for: meetingID)
-        try markdown.write(to: dir.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
+        try markdown.write(
+            to: dir.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
     }
 
     /// Persist the per-meeting speaker map (cluster voiceprints + display labels)
@@ -59,6 +60,16 @@ public final class MeetingStore {
         let url = try directory(for: meetingID).appendingPathComponent("speakers.json")
         let data = try JSONEncoder().encode(map)
         try data.write(to: url, options: .atomic)
+    }
+
+    /// Delete a meeting's per-meeting speaker map (`speakers.json`) so the next
+    /// (re-)transcription re-recognizes speakers from scratch. Idempotent. Never
+    /// touches the global speaker library (a root-level file, not in any bundle).
+    public func deleteSpeakerMap(for meetingID: String) {
+        let url = bundleURL(for: meetingID).appendingPathComponent("speakers.json")
+        if fileManager.fileExists(atPath: url.path) {
+            try? fileManager.removeItem(at: url)
+        }
     }
 
     /// Load the per-meeting speaker map, if present.
@@ -73,7 +84,10 @@ public final class MeetingStore {
     public func allRecordings() -> [MeetingRecording] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let dirs = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+        guard
+            let dirs = try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: nil)
+        else {
             return []
         }
         return dirs.compactMap { dir -> MeetingRecording? in
@@ -150,9 +164,11 @@ public final class MeetingStore {
 
     /// Recursively sum the byte size of regular files under `url`.
     private func directorySize(_ url: URL) -> Int64 {
-        guard let en = fileManager.enumerator(
-            at: url, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]
-        ) else { return 0 }
+        guard
+            let en = fileManager.enumerator(
+                at: url, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]
+            )
+        else { return 0 }
         var total: Int64 = 0
         for case let fileURL as URL in en {
             let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -166,19 +182,24 @@ public final class MeetingStore {
     /// `activeIDs` (recording or transcribing now). Operates ONLY on directories
     /// that contain a `recording.json`, so the root-level global `speakers.json`
     /// (the cross-meeting voiceprint library) is structurally never touched.
-    public func sweep(policy: RetentionPolicy, now: Date, activeIDs: Set<String>) -> RetentionSweepResult {
+    public func sweep(policy: RetentionPolicy, now: Date, activeIDs: Set<String>)
+        -> RetentionSweepResult
+    {
         var result = RetentionSweepResult()
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let dirs = try? fileManager.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil
-        ) else { return result }
+        guard
+            let dirs = try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: nil
+            )
+        else { return result }
 
         for dir in dirs {
             // Only valid meeting bundles — a directory with a decodable recording.json.
             let recordingJSON = dir.appendingPathComponent("recording.json")
             guard let data = try? Data(contentsOf: recordingJSON),
-                  let rec = try? decoder.decode(MeetingRecording.self, from: data) else { continue }
+                let rec = try? decoder.decode(MeetingRecording.self, from: data)
+            else { continue }
             let id = rec.meeting.id
             guard !activeIDs.contains(id) else { continue }
 
