@@ -4,12 +4,14 @@ import Foundation
 /// known speaker with `isMe == true` (enrolled by reading a script at setup).
 public struct KnownSpeaker: Codable, Sendable, Identifiable, Equatable {
     public let id: UUID
-    public var name: String         // "Me", "Sam", …
+    public var name: String  // "Me", "Sam", …
     public var isMe: Bool
-    public var embedding: [Float]    // voiceprint centroid
+    public var embedding: [Float]  // voiceprint centroid
     public var updatedAt: Date
 
-    public init(id: UUID = UUID(), name: String, isMe: Bool, embedding: [Float], updatedAt: Date = Date()) {
+    public init(
+        id: UUID = UUID(), name: String, isMe: Bool, embedding: [Float], updatedAt: Date = Date()
+    ) {
         self.id = id
         self.name = name
         self.isMe = isMe
@@ -36,7 +38,8 @@ public final class SpeakerLibrary {
     public init(url: URL) {
         self.url = url
         if let data = try? Data(contentsOf: url),
-           let decoded = try? JSONDecoder().decode([KnownSpeaker].self, from: data) {
+            let decoded = try? JSONDecoder().decode([KnownSpeaker].self, from: data)
+        {
             self.speakers = decoded
         } else {
             self.speakers = []
@@ -64,6 +67,17 @@ public final class SpeakerLibrary {
     public func rename(id: UUID, to newName: String) throws {
         guard let idx = speakers.firstIndex(where: { $0.id == id }) else { return }
         speakers[idx].name = newName
+        speakers[idx].updatedAt = Date()
+        try save()
+    }
+
+    /// Ensure the enrolled local user (the `isMe` entry) is named `name`, renaming it
+    /// if different. Preserves the voiceprint + `isMe`. No-op if already correct or if
+    /// the user isn't enrolled. Used to default/migrate "Me" to the account name.
+    public func setLocalUserName(_ name: String) throws {
+        guard let idx = speakers.firstIndex(where: { $0.isMe }) else { return }
+        guard speakers[idx].name != name else { return }
+        speakers[idx].name = name
         speakers[idx].updatedAt = Date()
         try save()
     }
