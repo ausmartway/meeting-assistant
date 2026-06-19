@@ -125,8 +125,11 @@ Pure, deterministic logic is unit-tested with **swift-testing** (`import Testing
 `HallucinationFilter`, `TranscriptFormatter`, `WhisperTextCleaner`,
 `SpeakerSampler.bestName`/`.dominantTile`, `Meeting.adHoc`, `MeetingDetector.isInProgress`,
 `MeetingNotification`, `ParakeetSegmentBuilder`, `EngineRouter`,
-`AutoRoutingTranscriber`, `CaptureSession.convert` (mic resampling), and
-`TranscriptTitleEditor`. The framework integrations (EventKit, ScreenCaptureKit,
+`AutoRoutingTranscriber`, `CaptureSession.convert` (mic resampling),
+`TranscriptTitleEditor`, `RetentionPolicy`, `MeetingStore.sweep`/`hasAudio`/`expireMedia`,
+`DisplaySelector`, `MeetingProvider.meetingAppBundleIDs`, `TranscriptionETA`,
+`MeetingSearch`, `LocalUserName`, `SpeakerLibrary.setLocalUserName`, and
+`MeetingStore.deleteSpeakerMap`. The framework integrations (EventKit, ScreenCaptureKit,
 AVAudioEngine, Vision) require real system access/permissions and are not unit
 tested — verify those by running the app. When adding logic, keep it pure and
 testable; follow TDD for it.
