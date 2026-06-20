@@ -70,6 +70,21 @@ struct SpeakerTimelineConsolidatorTests {
         #expect(names(out) == ["Alice"])
     }
 
+    @Test("variant snapping tie breaks to the earliest first-seen display")
+    func variantSnappingTieBreak() {
+        // Two variants of one name, each once → tie; earliest first-seen wins.
+        let input = timeline([(0, "John Smith"), (1, "john smith")])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == ["John Smith", "John Smith"])
+    }
+
+    @Test("lone read between two nil neighbors is nilled (no agreement)")
+    func isolatedOutlierBetweenNils() {
+        let input = timeline([(0, nil), (1, "Bob"), (2, nil)])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == [nil, nil, nil])
+    }
+
     @Test("all-nil timeline passes through")
     func allNil() {
         let input = timeline([(0, nil), (1, nil)])

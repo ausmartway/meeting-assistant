@@ -56,6 +56,8 @@ public enum SpeakerTimelineConsolidator {
     private static func suppressIsolatedOutliers(_ samples: [SpeakerSample]) -> [SpeakerSample] {
         guard samples.count >= 3 else { return samples }
         var result = samples
+        // Neighbors are read from the original `samples`, never the mutating
+        // `result`, so an earlier suppression can't cascade into the next decision.
         for i in 1..<(samples.count - 1) {
             let prev = samples[i - 1].speakerName
             let curr = samples[i].speakerName
