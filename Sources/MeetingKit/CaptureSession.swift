@@ -384,10 +384,15 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             if systemFile == nil {
                 let dir = try store.directory(for: meeting.id)
-                systemFile = try Self.makePCM16File(
-                    at: dir.appendingPathComponent("system.wav"),
-                    processingFormat: pcm.format
-                )
+                let url = dir.appendingPathComponent("system.wav")
+                // Prefer compact 16-bit int. But only standard PCM buffer formats can
+                // serve as an AVAudioFile processing format; if ScreenCaptureKit ever
+                // hands us something else, fall back to the buffer's own format so we
+                // record (uncompacted) rather than silently lose all system audio.
+                systemFile =
+                    pcm.format.commonFormat == .otherFormat
+                    ? try AVAudioFile(forWriting: url, settings: pcm.format.settings)
+                    : try Self.makePCM16File(at: url, processingFormat: pcm.format)
             }
             try systemFile?.write(from: pcm)
         } catch {
