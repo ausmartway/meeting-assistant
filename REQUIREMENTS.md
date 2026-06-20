@@ -124,6 +124,10 @@ Silicon. It only transcribes — summarization was intentionally removed.
   view). This is best-effort (it varies by app, theme, and layout) and degrades to
   "Speaker"; renaming (R8) is always the reliable fallback. The UI should set this
   expectation so an unnamed speaker doesn't read as a failure.
+  On-screen reads are made more reliable by post-processing: low-confidence OCR is
+  rejected, trivial name variants (whitespace, "(Host)"/"(You)", case) are merged,
+  and isolated single-frame misreads are voted out across samples
+  (`SpeakerTimelineConsolidator`, `SpeakerNameNormalizer`).
 
 ### Transcripts, history & management
 - **R19 — Persistent history.** Finished meetings are saved and listed in the main
