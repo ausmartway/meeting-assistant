@@ -1,5 +1,5 @@
-import Foundation
 import CoreImage
+import Foundation
 import Vision
 
 /// Best-effort reader of "who is speaking now" from a single captured video frame.
@@ -19,7 +19,9 @@ public final class SpeakerSampler {
     public init() {}
 
     /// Produce a speaker sample for a frame at the given meeting-relative timestamp.
-    public func sample(_ pixelBuffer: CVPixelBuffer, at timestamp: TimeInterval) async -> SpeakerSample {
+    public func sample(_ pixelBuffer: CVPixelBuffer, at timestamp: TimeInterval) async
+        -> SpeakerSample
+    {
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         let extent = image.extent
 
@@ -30,7 +32,9 @@ public final class SpeakerSampler {
         }
 
         // 2. Score each tile's border for the active-speaker highlight; pick the best.
-        let scored = tiles.map { (rect: $0, score: highlightScore(of: $0, in: image, extent: extent)) }
+        let scored = tiles.map {
+            (rect: $0, score: highlightScore(of: $0, in: image, extent: extent))
+        }
         let region: CGRect
         if let active = scored.max(by: { $0.score < $1.score }), active.score > highlightThreshold {
             // A clear active-speaker highlight → read that tile.
@@ -71,7 +75,8 @@ public final class SpeakerSampler {
         await withCheckedContinuation { continuation in
             let request = VNDetectRectanglesRequest { request, _ in
                 let rects = (request.results as? [VNRectangleObservation])?.map(\.boundingBox) ?? []
-                continuation.resume(returning: rects.isEmpty ? [CGRect(x: 0, y: 0, width: 1, height: 1)] : rects)
+                continuation.resume(
+                    returning: rects.isEmpty ? [CGRect(x: 0, y: 0, width: 1, height: 1)] : rects)
             }
             request.minimumAspectRatio = 0.3
             request.maximumObservations = 16
@@ -87,7 +92,9 @@ public final class SpeakerSampler {
 
     /// Average saturation*brightness along the tile's border band, in normalized
     /// (Vision) coordinates. A speaking ring pushes this well above a quiet tile.
-    private func highlightScore(of normalizedRect: CGRect, in image: CIImage, extent: CGRect) -> CGFloat {
+    private func highlightScore(of normalizedRect: CGRect, in image: CIImage, extent: CGRect)
+        -> CGFloat
+    {
         // Convert normalized rect (origin bottom-left) to image pixel coordinates.
         let rect = CGRect(
             x: extent.origin.x + normalizedRect.origin.x * extent.width,
@@ -98,10 +105,10 @@ public final class SpeakerSampler {
         // Sample a thin border band by averaging the outer frame of the tile.
         let band = max(2, min(rect.width, rect.height) * 0.04)
         let edges = [
-            CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: band),               // bottom
-            CGRect(x: rect.minX, y: rect.maxY - band, width: rect.width, height: band),         // top
-            CGRect(x: rect.minX, y: rect.minY, width: band, height: rect.height),               // left
-            CGRect(x: rect.maxX - band, y: rect.minY, width: band, height: rect.height),        // right
+            CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: band),  // bottom
+            CGRect(x: rect.minX, y: rect.maxY - band, width: rect.width, height: band),  // top
+            CGRect(x: rect.minX, y: rect.minY, width: band, height: rect.height),  // left
+            CGRect(x: rect.maxX - band, y: rect.minY, width: band, height: rect.height),  // right
         ]
         let scores = edges.map { averageVividness(of: image.cropped(to: $0)) }
         return scores.reduce(0, +) / CGFloat(scores.count)
@@ -110,10 +117,12 @@ public final class SpeakerSampler {
     /// Average "vividness" (saturation × brightness) of a region via CIAreaAverage.
     private func averageVividness(of region: CIImage) -> CGFloat {
         guard !region.extent.isInfinite, !region.extent.isEmpty else { return 0 }
-        let filter = CIFilter(name: "CIAreaAverage", parameters: [
-            kCIInputImageKey: region,
-            kCIInputExtentKey: CIVector(cgRect: region.extent),
-        ])
+        let filter = CIFilter(
+            name: "CIAreaAverage",
+            parameters: [
+                kCIInputImageKey: region,
+                kCIInputExtentKey: CIVector(cgRect: region.extent),
+            ])
         guard let output = filter?.outputImage else { return 0 }
         var bitmap = [UInt8](repeating: 0, count: 4)
         ciContext.render(
@@ -124,8 +133,11 @@ public final class SpeakerSampler {
             format: .RGBA8,
             colorSpace: CGColorSpaceCreateDeviceRGB()
         )
-        let r = CGFloat(bitmap[0]) / 255, g = CGFloat(bitmap[1]) / 255, b = CGFloat(bitmap[2]) / 255
-        let maxC = max(r, g, b), minC = min(r, g, b)
+        let r = CGFloat(bitmap[0]) / 255
+        let g = CGFloat(bitmap[1]) / 255
+        let b = CGFloat(bitmap[2]) / 255
+        let maxC = max(r, g, b)
+        let minC = min(r, g, b)
         let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
         let brightness = maxC
         return saturation * brightness
@@ -133,9 +145,16 @@ public final class SpeakerSampler {
 
     // MARK: - OCR
 
+    /// Reject OCR candidates below this Vision confidence (0–1). Low-confidence
+    /// reads return nil → SpeakerFuser degrades to "Speaker" rather than asserting
+    /// a confident-wrong name.
+    private let nameConfidenceThreshold: Float = 0.4
+
     /// OCR the lower strip of the active tile (where name labels usually sit) and
     /// return the most plausible participant name.
-    private func recognizeName(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect) async -> String? {
+    private func recognizeName(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect) async
+        -> String?
+    {
         // Name labels typically occupy the bottom ~20% of a tile.
         let nameStrip = CGRect(
             x: regionOfInterest.minX,
@@ -143,11 +162,18 @@ public final class SpeakerSampler {
             width: regionOfInterest.width,
             height: max(0.05, regionOfInterest.height * 0.2)
         )
+        let threshold = nameConfidenceThreshold
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, _ in
-                let lines = (request.results as? [VNRecognizedTextObservation])?
-                    .compactMap { $0.topCandidates(1).first?.string } ?? []
-                continuation.resume(returning: Self.bestName(from: lines))
+                // Keep only candidates Vision is reasonably confident about.
+                let lines =
+                    (request.results as? [VNRecognizedTextObservation])?
+                    .compactMap { $0.topCandidates(1).first }
+                    .filter { $0.confidence >= threshold }
+                    .map(\.string) ?? []
+                // Normalize the chosen name (strip roles, collapse whitespace).
+                let best = Self.bestName(from: lines).flatMap(SpeakerNameNormalizer.displayName)
+                continuation.resume(returning: best)
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
@@ -168,7 +194,8 @@ public final class SpeakerSampler {
             "靜音", "静音", "取消靜音", "取消静音", "停止視訊", "停止视频",
             "開始視訊", "开始视频", "更多", "聊天", "舉手", "举手", "你", "我",
         ]
-        let candidates = lines
+        let candidates =
+            lines
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { line in
                 let lower = line.lowercased()
