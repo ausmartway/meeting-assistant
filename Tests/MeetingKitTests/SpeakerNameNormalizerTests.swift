@@ -35,6 +35,16 @@ struct SpeakerNameNormalizerDisplayNameTests {
     func leavesCleanName() {
         #expect(SpeakerNameNormalizer.displayName("Mei Chen") == "Mei Chen")
     }
+
+    @Test("strips a fullwidth-bracketed English role")
+    func stripsFullwidthEnglishRole() {
+        #expect(SpeakerNameNormalizer.displayName("Sam（Host）") == "Sam")
+    }
+
+    @Test("strip-then-length-reject: a one-char name with a role marker is nil")
+    func stripThenRejectShort() {
+        #expect(SpeakerNameNormalizer.displayName("A (Host)") == nil)
+    }
 }
 
 @Suite("SpeakerNameNormalizer.canonicalKey")

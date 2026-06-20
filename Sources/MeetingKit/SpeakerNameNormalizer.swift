@@ -29,6 +29,7 @@ public enum SpeakerNameNormalizer {
     }
 
     /// Folded key for grouping variants: lowercased, diacritics-removed, whitespace removed.
+    /// Expects an already-`displayName`'d string; it does not itself strip role markers.
     public static func canonicalKey(_ name: String) -> String {
         let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
         return folded.filter { !$0.isWhitespace }
