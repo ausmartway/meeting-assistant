@@ -118,8 +118,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private func startMicrophoneCapture(into url: URL) throws {
         // Write at the FIXED mic format so route/format changes during the call
-        // can't break the file; input buffers are converted to it in the tap.
-        micFile = try AVAudioFile(forWriting: url, settings: micFormat.settings)
+        // can't break the file; input buffers are converted to it in the tap. Stored
+        // as 16-bit int PCM (half the size of float, no transcription loss).
+        micFile = try Self.makePCM16File(at: url, processingFormat: micFormat)
 
         // AVAudioEngine STOPS when the audio route changes — a Bluetooth device
         // connecting, AirPods switching A2DP↔HFP as the mic engages for a call, a
@@ -192,6 +193,26 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         micStateLock.lock()
         micFramesWritten += Int(out.frameLength)
         micStateLock.unlock()
+    }
+
+    /// Create an audio file that stores **16-bit integer PCM** on disk while accepting
+    /// `processingFormat` (e.g. 16 kHz float32) buffers — `AVAudioFile` converts on write.
+    /// Speech transcription downconverts the audio anyway, so int16 is lossless for our
+    /// purposes and halves the WAV size vs. 32-bit float. `commonFormat`/`interleaved`
+    /// must mirror the buffers that will be written so `write(from:)` doesn't mismatch.
+    static func makePCM16File(at url: URL, processingFormat: AVAudioFormat) throws -> AVAudioFile {
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: processingFormat.sampleRate,
+            AVNumberOfChannelsKey: processingFormat.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        return try AVAudioFile(
+            forWriting: url, settings: settings,
+            commonFormat: processingFormat.commonFormat, interleaved: processingFormat.isInterleaved
+        )
     }
 
     /// Resample/convert one PCM buffer to `format` in a single shot, returning nil
@@ -363,10 +384,15 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             if systemFile == nil {
                 let dir = try store.directory(for: meeting.id)
-                systemFile = try AVAudioFile(
-                    forWriting: dir.appendingPathComponent("system.wav"),
-                    settings: pcm.format.settings
-                )
+                let url = dir.appendingPathComponent("system.wav")
+                // Prefer compact 16-bit int. But only standard PCM buffer formats can
+                // serve as an AVAudioFile processing format; if ScreenCaptureKit ever
+                // hands us something else, fall back to the buffer's own format so we
+                // record (uncompacted) rather than silently lose all system audio.
+                systemFile =
+                    pcm.format.commonFormat == .otherFormat
+                    ? try AVAudioFile(forWriting: url, settings: pcm.format.settings)
+                    : try Self.makePCM16File(at: url, processingFormat: pcm.format)
             }
             try systemFile?.write(from: pcm)
         } catch {
