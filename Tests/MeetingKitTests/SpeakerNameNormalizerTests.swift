@@ -36,3 +36,31 @@ struct SpeakerNameNormalizerDisplayNameTests {
         #expect(SpeakerNameNormalizer.displayName("Mei Chen") == "Mei Chen")
     }
 }
+
+@Suite("SpeakerNameNormalizer.canonicalKey")
+struct SpeakerNameNormalizerCanonicalKeyTests {
+
+    @Test("folds case and whitespace to one key")
+    func foldsCaseAndWhitespace() {
+        #expect(
+            SpeakerNameNormalizer.canonicalKey("John Smith")
+                == SpeakerNameNormalizer.canonicalKey("john  smith")
+        )
+    }
+
+    @Test("folds diacritics")
+    func foldsDiacritics() {
+        #expect(
+            SpeakerNameNormalizer.canonicalKey("José")
+                == SpeakerNameNormalizer.canonicalKey("Jose")
+        )
+    }
+
+    @Test("different names get different keys")
+    func differentNames() {
+        #expect(
+            SpeakerNameNormalizer.canonicalKey("John Smith")
+                != SpeakerNameNormalizer.canonicalKey("Jane Smith")
+        )
+    }
+}
