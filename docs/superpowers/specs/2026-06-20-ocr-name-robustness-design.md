@@ -75,13 +75,15 @@ Two ordered steps over the time-sorted samples:
   `canonicalKey`. Within each cluster the most-frequent `displayName` variant wins
   (ties broken by first-seen for determinism) and rewrites every member of the
   cluster to that winner. Folds whitespace/role/case variants to one label.
-- **B. Isolated-outlier suppression.** A name appearing in a single isolated
-  sample whose nearest non-nil neighbors before and after are the *same different*
-  name is treated as a misread and replaced by that neighbor name. If the
-  neighbors disagree (or one is missing), the lone read is set to `nil` rather
-  than trusted. Leaning toward suppression is intentional: OCR is the fragile
-  signal, mic-vs-system is the reliable one. Trade-off accepted: a genuine brief
-  speaker switch between two samples may be smoothed away.
+- **B. Isolated-outlier suppression.** A name appearing in a single sample whose
+  *immediate* neighbors before and after are the *same different* name is treated
+  as a misread and replaced by that neighbor name. If the neighbors disagree (or
+  either is missing/`nil`), the lone read is set to `nil` rather than trusted.
+  Neighbors are the directly-adjacent samples (the check does not reach across
+  `nil` gaps), which keeps suppression conservative. Leaning toward suppression is
+  intentional: OCR is the fragile signal, mic-vs-system is the reliable one.
+  Trade-off accepted: a genuine brief speaker switch between two samples may be
+  smoothed away.
 
 **Out of scope:** folding arbitrary OCR character-confusions (0↔O, 1↔l↔I) into a
 shared cluster — too risky. Those misreads are instead caught as isolated outliers
