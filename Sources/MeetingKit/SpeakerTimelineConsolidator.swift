@@ -17,7 +17,8 @@ public enum SpeakerTimelineConsolidator {
 
     public static func consolidate(_ timeline: SpeakerTimeline) -> SpeakerTimeline {
         let snapped = snapVariants(timeline.samples)
-        return SpeakerTimeline(samples: snapped)
+        let cleaned = suppressIsolatedOutliers(snapped)
+        return SpeakerTimeline(samples: cleaned)
     }
 
     /// Step A: rewrite every named sample to the most-frequent display in its
@@ -46,5 +47,24 @@ public enum SpeakerTimelineConsolidator {
             let key = SpeakerNameNormalizer.canonicalKey(name)
             return SpeakerSample(timestamp: s.timestamp, speakerName: winner[key] ?? name)
         }
+    }
+
+    /// Step B: a single sample whose name differs from BOTH its immediate
+    /// neighbors is a likely misread. If the two neighbors agree, adopt their
+    /// name; if they disagree (or a neighbor is missing), drop to nil. A name that
+    /// persists across two or more adjacent samples is never suppressed.
+    private static func suppressIsolatedOutliers(_ samples: [SpeakerSample]) -> [SpeakerSample] {
+        guard samples.count >= 3 else { return samples }
+        var result = samples
+        for i in 1..<(samples.count - 1) {
+            let prev = samples[i - 1].speakerName
+            let curr = samples[i].speakerName
+            let next = samples[i + 1].speakerName
+            guard let curr, curr != prev, curr != next else { continue }
+            // curr is isolated (differs from both neighbors).
+            let replacement = (prev != nil && prev == next) ? prev : nil
+            result[i] = SpeakerSample(timestamp: samples[i].timestamp, speakerName: replacement)
+        }
+        return result
     }
 }

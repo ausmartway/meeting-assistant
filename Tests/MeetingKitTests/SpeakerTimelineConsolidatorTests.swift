@@ -41,4 +41,39 @@ struct SpeakerTimelineConsolidatorTests {
         let out = SpeakerTimelineConsolidator.consolidate(input)
         #expect(out.samples.map(\.timestamp) == [0, 5])
     }
+
+    @Test("lone differing read between two same neighbors is replaced by the neighbor")
+    func isolatedOutlierReplacedByAgreeingNeighbors() {
+        let input = timeline([(0, "Alice"), (1, "Bob"), (2, "Alice")])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == ["Alice", "Alice", "Alice"])
+    }
+
+    @Test("lone read between two disagreeing neighbors is nilled")
+    func isolatedOutlierNilledWhenNeighborsDisagree() {
+        let input = timeline([(0, "Alice"), (1, "Bob"), (2, "Carol")])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == ["Alice", nil, "Carol"])
+    }
+
+    @Test("a name held across multiple samples is not suppressed")
+    func stableNameKept() {
+        let input = timeline([(0, "Alice"), (1, "Bob"), (2, "Bob"), (3, "Alice")])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == ["Alice", "Bob", "Bob", "Alice"])
+    }
+
+    @Test("single-sample timeline passes through")
+    func singleSample() {
+        let input = timeline([(0, "Alice")])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == ["Alice"])
+    }
+
+    @Test("all-nil timeline passes through")
+    func allNil() {
+        let input = timeline([(0, nil), (1, nil)])
+        let out = SpeakerTimelineConsolidator.consolidate(input)
+        #expect(names(out) == [nil, nil])
+    }
 }
