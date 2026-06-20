@@ -96,9 +96,11 @@ public final class MeetingProcessor {
         //     library snapshot; unmatched clusters fall back to anonymous
         //     "Speaker N" labels.
         let micLabels = SpeakerRecognizer.resolve(outcome: outcome, knownSpeakers: knownSpeakers)
+        // Multi-frame voting cleans OCR misreads/variants before fusion (post-processing).
+        let consolidatedTimeline = SpeakerTimelineConsolidator.consolidate(recording.timeline)
         let labeled = SpeakerFuser.fuse(
             segments: cleaned,
-            timeline: recording.timeline,
+            timeline: consolidatedTimeline,
             micDiarization: outcome.spans,
             micLabels: micLabels,
             micLabel: localUserName
