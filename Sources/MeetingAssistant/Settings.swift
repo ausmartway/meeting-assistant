@@ -40,6 +40,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(identifyInRoomSpeakers, forKey: Keys.identifyInRoomSpeakers) }
     }
 
+    /// Display name for the local user ("me") in transcripts and the UI. Defaults to
+    /// the macOS account full name; editable. Blank falls back to the account name,
+    /// then "Me".
+    @Published var localUserName: String {
+        didSet { defaults.set(localUserName, forKey: Keys.localUserName) }
+    }
+
     /// Days to keep heavy audio before auto-deleting it. `0` means "Never".
     /// Default 7 (see RetentionPolicy.default / spec R26).
     @Published var mediaRetentionDays: Int {
@@ -64,6 +71,7 @@ final class AppSettings: ObservableObject {
         static let transcriptionWorkers = "transcriptionWorkers"
         static let showDockIcon = "showDockIcon"
         static let identifyInRoomSpeakers = "identifyInRoomSpeakers"
+        static let localUserName = "localUserName"
         static let mediaRetentionDays = "mediaRetentionDays"
         static let transcriptRetentionDays = "transcriptRetentionDays"
     }
@@ -89,6 +97,9 @@ final class AppSettings: ObservableObject {
             ? true
             : defaults.bool(forKey: Keys.showDockIcon)
         self.identifyInRoomSpeakers = defaults.bool(forKey: Keys.identifyInRoomSpeakers)
+        self.localUserName = LocalUserName.resolve(
+            override: defaults.string(forKey: Keys.localUserName) ?? "",
+            accountName: NSFullUserName())
         self.mediaRetentionDays =
             defaults.object(forKey: Keys.mediaRetentionDays) == nil
             ? 7 : defaults.integer(forKey: Keys.mediaRetentionDays)

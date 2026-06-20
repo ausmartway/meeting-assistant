@@ -89,11 +89,20 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R8 — Name anonymous speakers, remembered locally.** The user can rename an
   anonymous speaker (e.g. "Speaker 2" → "Sam") from the transcript. The name is
   remembered locally.
+- **R8b — Local user named, not "Me".** The local user is labeled by an **editable
+  display name** (defaulting to the macOS account full name) instead of "Me", in
+  transcripts and the UI; an existing "Me" enrollment is migrated to that name. The
+  name is set/changed in Settings → Speakers.
 - **R9 — Cross-meeting recognition.** Naming a speaker stores that voice's print in
   a **local speaker library**, so the same person is auto-recognized by name in
-  future meetings. "Me" is just the enrolled member of that library.
+  future meetings. The local user is just the enrolled member of that library.
 - **R10 — Conservative matching.** Only **confident** voice matches are auto-named;
-  weak matches stay anonymous rather than risk the wrong name.
+  weak matches stay anonymous rather than risk the wrong name. A known name is
+  assigned only when it clearly beats the next-nearest different speaker (a margin),
+  so an ambiguous voiceprint never grabs a wrong name.
+- **R10c — Re-transcribe re-recognizes.** Re-transcribing a meeting clears its
+  previous per-meeting speaker identifications and recognizes speakers afresh; the
+  cross-meeting speaker library (R9) is preserved.
 - **R10b — Best-effort on-screen names.** When a remote participant's name is shown
   on screen, the app reads that on-screen name label to identify them — including a
   **single** remote participant with no active-speaker highlight (a 1-on-1 / speaker
