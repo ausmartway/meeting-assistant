@@ -13,6 +13,8 @@ public final class MeetingProcessor {
     /// not the live, non-Sendable `SpeakerLibrary` — so background processing
     /// never races the library being edited on another thread.
     private let knownSpeakers: [KnownSpeaker]
+    /// Display name for the local user's mic segments (defaults to the generic "Me").
+    private let localUserName: String
 
     private static let log = Logger(subsystem: "MeetingAssistant", category: "diarization")
 
@@ -20,12 +22,14 @@ public final class MeetingProcessor {
         store: MeetingStore,
         transcriber: Transcribing,
         diarizer: Diarizing = StubDiarizer(),
-        knownSpeakers: [KnownSpeaker] = []
+        knownSpeakers: [KnownSpeaker] = [],
+        localUserName: String = "Me"
     ) {
         self.store = store
         self.transcriber = transcriber
         self.diarizer = diarizer
         self.knownSpeakers = knownSpeakers
+        self.localUserName = localUserName
     }
 
     /// Progress callback for the UI: `fraction` is 0...1 during model download
@@ -41,6 +45,10 @@ public final class MeetingProcessor {
         let dir = try store.directory(for: recording.meeting.id)
         let micURL = dir.appendingPathComponent(recording.micAudioFile)
         let systemURL = dir.appendingPathComponent(recording.systemAudioFile)
+
+        // Re-transcription must re-recognize from scratch: drop the previous
+        // per-meeting speaker map so stale labels don't carry over.
+        store.deleteSpeakerMap(for: recording.meeting.id)
 
         let started = Date()
 
@@ -92,7 +100,8 @@ public final class MeetingProcessor {
             segments: cleaned,
             timeline: recording.timeline,
             micDiarization: outcome.spans,
-            micLabels: micLabels
+            micLabels: micLabels,
+            micLabel: localUserName
         )
 
         // 2d. Persist the per-meeting speaker map (cluster voiceprints + labels) so

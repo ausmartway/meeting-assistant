@@ -35,6 +35,12 @@ Silicon. It only transcribes — summarization was intentionally removed.
   of going silently dead. If the mic ever produces no audio, the app **warns the
   user** (menu bar + notification) within a few seconds so it can be fixed live
   rather than discovered afterwards.
+- **R1d — Both channels monitored *(planned)*.** The same no-audio watchdog (R1b)
+  must also cover the **system / remote-participant** channel: if no remote audio is
+  captured for several seconds while recording, the app warns the user (menu bar +
+  notification). Recording only your own voice for a whole meeting because the
+  remote channel silently dropped is a silent catastrophe for a notes app; the
+  recording indicator (R1c) should reflect that **both** channels are live.
 - **R2 — Record while transcribing.** The user can start a new recording while
   earlier meetings are still being transcribed. Recording is independent of
   transcription; finished meetings queue and transcribe serially in the background.
@@ -58,6 +64,15 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R1c — Visible recording state.** While recording, the app shows a clear,
   persistent indicator that capture is active (menu-bar icon + status, and in the
   main window), so the user is never unsure whether a meeting is being recorded.
+- **R1e — Resilient prompting & back-to-back meetings *(planned)*.** Real meetings are
+  messy, so a single fire-once notification isn't enough. For a detected, in-progress
+  meeting the **"Record '<subject>'" action stays available for the whole meeting**
+  (menu bar / main window), so a missed notification or a **late join** can still be
+  recorded (it still inherits the calendar subject, R3c). **Consecutive meetings** are
+  handled explicitly: recording does **not** auto-stop at the calendar end time
+  (meetings overrun); when a new meeting is detected while one is recording, the app
+  prompts for the new one and, on Start, cleanly finalizes the current recording and
+  starts the next. Only **one meeting records at a time**.
 - **R3e — Preserve interrupted recordings *(deprioritized)*.** If the app quits or the
   Mac sleeps mid-recording, the audio captured so far is preserved and can still be
   transcribed rather than lost. *(Deliberately deprioritized by the owner — not worth
@@ -89,11 +104,20 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R8 — Name anonymous speakers, remembered locally.** The user can rename an
   anonymous speaker (e.g. "Speaker 2" → "Sam") from the transcript. The name is
   remembered locally.
+- **R8b — Local user named, not "Me".** The local user is labeled by an **editable
+  display name** (defaulting to the macOS account full name) instead of "Me", in
+  transcripts and the UI; an existing "Me" enrollment is migrated to that name. The
+  name is set/changed in Settings → Speakers.
 - **R9 — Cross-meeting recognition.** Naming a speaker stores that voice's print in
   a **local speaker library**, so the same person is auto-recognized by name in
-  future meetings. "Me" is just the enrolled member of that library.
+  future meetings. The local user is just the enrolled member of that library.
 - **R10 — Conservative matching.** Only **confident** voice matches are auto-named;
-  weak matches stay anonymous rather than risk the wrong name.
+  weak matches stay anonymous rather than risk the wrong name. A known name is
+  assigned only when it clearly beats the next-nearest different speaker (a margin),
+  so an ambiguous voiceprint never grabs a wrong name.
+- **R10c — Re-transcribe re-recognizes.** Re-transcribing a meeting clears its
+  previous per-meeting speaker identifications and recognizes speakers afresh; the
+  cross-meeting speaker library (R9) is preserved.
 - **R10b — Best-effort on-screen names.** When a remote participant's name is shown
   on screen, the app reads that on-screen name label to identify them — including a
   **single** remote participant with no active-speaker highlight (a 1-on-1 / speaker
@@ -151,6 +175,12 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R13 — Transcript reading view.** Speaker-labeled transcript shown in a
   comfortable reading layout (serif body, constrained measure), with Copy / Export
   (Save / Reveal) / Make-again actions and a Speakers section for renaming.
+- **R13b — Verify a line against its audio *(planned)*.** Local transcription
+  mishears names, jargon, and numbers, and a confidently-wrong line is dangerous once
+  pasted into a client follow-up. While the audio still exists (before retention
+  expiry, R26), the user can **click a transcript line to play that audio segment** and
+  check/fix it. This makes the "best-effort" nature honest rather than silently
+  authoritative; once audio is cleared, playback is simply unavailable.
 - **R14 — Distinctive app icon.** A custom icon (microphone + waveform on a
   blue→indigo squircle), not the generic default.
 - **R15 — Discoverable setup.** Voice enrollment and settings are reachable from
@@ -180,6 +210,13 @@ Silicon. It only transcribes — summarization was intentionally removed.
   device**. All transcription and speaker work runs on-device. (This is
   load-bearing — do not add cloud dependencies; it is why live cloud transcription
   was rejected, see §4.)
+- **N1b — Participant consent is the user's responsibility *(planned)*.** N1 protects
+  *the user's* privacy; this protects *the people they record*. The app captures other
+  participants' audio, so it must (a) **never record covertly** — recording always has
+  the visible indicator (R1c) — and (b) on first run, and as a one-line reminder near
+  the Record action, make clear that the user is responsible for obtaining recording
+  consent where law/policy requires it. Optionally offer a "remind me to tell
+  participants" nudge. This keeps the tool trustworthy and IT/legal-safe.
 - **N2 — Cheap live capture, heavy post-processing.** The component that runs
   *during* a meeting stays lightweight; transcription and speaker fusion run
   **after** the meeting. New live-path features must respect this (R2's recording

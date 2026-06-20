@@ -1,4 +1,5 @@
 import Testing
+
 @testable import MeetingKit
 
 @Suite("SpeakerFuser")
@@ -24,7 +25,8 @@ struct SpeakerFuserTests {
             SpeakerSample(timestamp: 0, speakerName: "Alice"),
             SpeakerSample(timestamp: 10, speakerName: "Bob"),
         ])
-        let out = SpeakerFuser.fuse(segments: [sys(3, 5, "point one"), sys(11, 13, "point two")], timeline: timeline)
+        let out = SpeakerFuser.fuse(
+            segments: [sys(3, 5, "point one"), sys(11, 13, "point two")], timeline: timeline)
         #expect(out.map(\.speaker) == ["Alice", "Bob"])
     }
 
@@ -48,7 +50,8 @@ struct SpeakerFuserTests {
 
     @Test("falls back to the unknown label when the timeline is empty")
     func fallsBackWhenTimelineEmpty() {
-        let out = SpeakerFuser.fuse(segments: [sys(1, 2, "no timeline")], timeline: SpeakerTimeline(samples: []))
+        let out = SpeakerFuser.fuse(
+            segments: [sys(1, 2, "no timeline")], timeline: SpeakerTimeline(samples: []))
         #expect(out.first?.speaker == "Speaker")
     }
 
@@ -97,5 +100,14 @@ struct SpeakerFuserTests {
             micLabels: ["spk_a": "Speaker 2"]
         )
         #expect(out.map(\.speaker) == ["Me"])
+    }
+
+    @Test("mic segments carry the supplied local-user label")
+    func micLabelHonored() {
+        let segs = [TranscriptSegment(start: 0, end: 1, text: "hi", channel: .microphone)]
+        let out = SpeakerFuser.fuse(
+            segments: segs, timeline: SpeakerTimeline(samples: []),
+            micDiarization: [], micLabels: [:], micLabel: "Yulei Liu")
+        #expect(out.first?.speaker == "Yulei Liu")
     }
 }

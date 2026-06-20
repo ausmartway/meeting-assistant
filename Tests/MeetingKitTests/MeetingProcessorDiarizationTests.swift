@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite("MeetingProcessor diarization wiring")
@@ -8,9 +9,14 @@ struct MeetingProcessorDiarizationTests {
     // A transcriber that returns one mic segment so we can observe its label.
     private struct OneMicSegmentTranscriber: Transcribing {
         func prepare(progress: TranscribeProgressHandler?) async throws {}
-        func transcribe(audioFile: URL, channel: AudioChannel, progress: TranscribeProgressHandler?) async throws -> [TranscriptSegment] {
+        func transcribe(audioFile: URL, channel: AudioChannel, progress: TranscribeProgressHandler?)
+            async throws -> [TranscriptSegment]
+        {
             channel == .microphone
-                ? [TranscriptSegment(start: 0, end: 4, text: "hello from the room", channel: .microphone)]
+                ? [
+                    TranscriptSegment(
+                        start: 0, end: 4, text: "hello from the room", channel: .microphone)
+                ]
                 : []
         }
     }
@@ -18,9 +24,12 @@ struct MeetingProcessorDiarizationTests {
     // A diarizer that splits the timeline into another speaker (not "Me").
     private struct TwoSpeakerDiarizer: Diarizing {
         func prepare(progress: TranscribeProgressHandler?) async throws {}
-        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws -> DiarizationOutcome {
-            DiarizationOutcome(spans: [DiarizedSpan(start: 0, end: 5, speakerID: "spk_a")],
-                               embeddings: ["spk_a": [1, 0, 0]])   // not "Me" -> Speaker 2
+        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws
+            -> DiarizationOutcome
+        {
+            DiarizationOutcome(
+                spans: [DiarizedSpan(start: 0, end: 5, speakerID: "spk_a")],
+                embeddings: ["spk_a": [1, 0, 0]])  // not "Me" -> Speaker 2
         }
     }
 
@@ -28,14 +37,17 @@ struct MeetingProcessorDiarizationTests {
     private struct FailingDiarizer: Diarizing {
         struct Boom: Error {}
         func prepare(progress: TranscribeProgressHandler?) async throws {}
-        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws -> DiarizationOutcome {
+        func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws
+            -> DiarizationOutcome
+        {
             throw Boom()
         }
     }
 
     private func makeRecording() throws -> (MeetingStore, MeetingRecording) {
-        let store = try MeetingStore(root: FileManager.default.temporaryDirectory
-            .appendingPathComponent("ma-diar-\(UUID().uuidString)"))
+        let store = try MeetingStore(
+            root: FileManager.default.temporaryDirectory
+                .appendingPathComponent("ma-diar-\(UUID().uuidString)"))
         let meeting = Meeting.adHoc(id: UUID().uuidString, provider: nil, start: Date())
         let recording = MeetingRecording(
             meeting: meeting, recordedAt: Date(),
@@ -44,8 +56,10 @@ struct MeetingProcessorDiarizationTests {
         )
         try store.save(recording)
         let dir = try store.directory(for: meeting.id)
-        FileManager.default.createFile(atPath: dir.appendingPathComponent("mic.wav").path, contents: Data())
-        FileManager.default.createFile(atPath: dir.appendingPathComponent("sys.wav").path, contents: Data())
+        FileManager.default.createFile(
+            atPath: dir.appendingPathComponent("mic.wav").path, contents: Data())
+        FileManager.default.createFile(
+            atPath: dir.appendingPathComponent("sys.wav").path, contents: Data())
         return (store, recording)
     }
 
@@ -102,5 +116,34 @@ struct MeetingProcessorDiarizationTests {
         try store.saveSpeakerMap(map, for: recording.meeting.id)
         let back = store.speakerMap(for: recording.meeting.id)
         #expect(back == map)
+    }
+
+    @Test("re-processing deletes the prior per-meeting speaker map")
+    func reprocessResetsSpeakerMap() async throws {
+        let store = try MeetingStore(
+            root: FileManager.default.temporaryDirectory
+                .appendingPathComponent("ma-reproc-\(UUID().uuidString)"))
+        let meeting = Meeting.adHoc(id: UUID().uuidString, provider: nil, start: Date())
+        let recording = MeetingRecording(
+            meeting: meeting, recordedAt: Date(),
+            micAudioFile: "mic.wav", systemAudioFile: "sys.wav",
+            timeline: SpeakerTimeline(samples: []))
+        try store.save(recording)
+        let dir = try store.directory(for: meeting.id)
+        FileManager.default.createFile(
+            atPath: dir.appendingPathComponent("mic.wav").path, contents: Data())
+        FileManager.default.createFile(
+            atPath: dir.appendingPathComponent("sys.wav").path, contents: Data())
+        try store.saveSpeakerMap(
+            MeetingSpeakerMap(
+                labelByCluster: ["S1": "Larry Song"], embeddingByCluster: ["S1": [1]]),
+            for: meeting.id)
+
+        let processor = MeetingProcessor(
+            store: store, transcriber: StubTranscriber(), diarizer: StubDiarizer(),
+            knownSpeakers: [], localUserName: "Yulei Liu")
+        _ = try await processor.process(recording)
+
+        #expect(store.speakerMap(for: meeting.id) == nil)
     }
 }

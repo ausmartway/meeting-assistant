@@ -489,7 +489,10 @@ private struct MeetingDetailView: View {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 SectionLabel("Speakers — rename to teach a voice")
                 ForEach(speakers, id: \.self) { label in
-                    SpeakerRenameRow(originalLabel: label) { newName in
+                    SpeakerRenameRow(
+                        originalLabel: label,
+                        localUserName: state.settings.localUserName
+                    ) { newName in
                         state.renameSpeaker(in: recording, from: label, to: newName)
                     }
                 }
@@ -537,11 +540,13 @@ private struct MarkdownText: View {
 /// the draft is non-empty and changed.
 private struct SpeakerRenameRow: View {
     let originalLabel: String
+    let localUserName: String
     let onRename: (String) -> Void
     @State private var draft: String
 
-    init(originalLabel: String, onRename: @escaping (String) -> Void) {
+    init(originalLabel: String, localUserName: String, onRename: @escaping (String) -> Void) {
         self.originalLabel = originalLabel
+        self.localUserName = localUserName
         self.onRename = onRename
         _draft = State(initialValue: originalLabel)
     }
@@ -549,7 +554,7 @@ private struct SpeakerRenameRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            SpeakerChip(text: originalLabel, isMe: originalLabel == "Me").frame(
+            SpeakerChip(text: originalLabel, isMe: originalLabel == localUserName).frame(
                 width: 96, alignment: .leading)
             TextField("Name", text: $draft)
                 .textFieldStyle(.roundedBorder).frame(maxWidth: 220)
