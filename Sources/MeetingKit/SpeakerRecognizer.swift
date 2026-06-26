@@ -23,7 +23,8 @@ public enum SpeakerRecognizer {
         outcome: DiarizationOutcome,
         knownSpeakers: [KnownSpeaker],
         threshold: Float = defaultThreshold,
-        margin: Float = defaultMargin
+        margin: Float = defaultMargin,
+        startingAnon: Int = 2
     ) -> [String: String] {
         // Order of first appearance across the spans (stable, deterministic).
         var seen = Set<String>()
@@ -61,7 +62,7 @@ public enum SpeakerRecognizer {
         // reserved by convention for the local user ("Me"), kept stable across
         // meetings even when a given meeting doesn't resolve a "Me" cluster — so the
         // same person doesn't get a different number from one meeting to the next.
-        var nextAnon = 2
+        var nextAnon = startingAnon
         var labels: [String: String] = [:]
         for cluster in clustersInOrder {
             if let m = match[cluster], winnerForName[m.name] == cluster {
