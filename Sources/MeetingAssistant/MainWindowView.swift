@@ -347,10 +347,20 @@ private struct MeetingDetailView: View {
             header
             Divider()
             if state.processing.current?.id == recording.meeting.id { progressRow }
-            speakersSection
-            TranscriptReadingView(
-                document: state.transcript(for: recording),
-                localUserName: state.settings.localUserName)
+            // Reading column on the left; a fixed details inspector (Speakers) on the
+            // right, so a wide window's space is used instead of left as empty gutters.
+            HStack(alignment: .top, spacing: 0) {
+                TranscriptReadingView(
+                    document: state.transcript(for: recording),
+                    localUserName: state.settings.localUserName
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if !state.meetingSpeakers(for: recording).isEmpty {
+                    Divider()
+                    detailsInspector
+                        .frame(width: 280)
+                }
+            }
         }
     }
 
@@ -506,9 +516,12 @@ private struct MeetingDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder private var speakersSection: some View {
+    /// Trailing details panel: the Speakers editor (and room for future meeting
+    /// details). Fills the right side of wide windows so the reading column can stay
+    /// a comfortable measure without leaving the rest of the pane empty.
+    private var detailsInspector: some View {
         let speakers = state.meetingSpeakers(for: recording)
-        if !speakers.isEmpty {
+        return ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 SectionLabel("Speakers")
                 Text("Renaming a speaker teaches their voice for future meetings.")
@@ -522,10 +535,10 @@ private struct MeetingDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.25))
+            .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.m)
         }
+        .background(.quaternary.opacity(0.18))
     }
 
     private func copyToClipboard(_ text: String) {
@@ -570,7 +583,9 @@ private struct TranscriptReadingView: View {
                     transcriptFooter(parsed)
                 }
             }
-            // Constrain the measure, then center the column in the wide pane.
+            // Constrain the measure; center the column in the transcript area so its
+            // margins read as an intentional document (the details inspector anchors
+            // the trailing edge), rather than text hugging one side.
             .frame(maxWidth: Theme.readingMeasure, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Theme.Space.l)
@@ -581,7 +596,7 @@ private struct TranscriptReadingView: View {
     private func transcriptFooter(_ parsed: TranscriptParser.Parsed) -> some View {
         var words = 0
         for turn in parsed.turns {
-            words += turn.text.split(separator: " ").count
+            words += Self.wordCount(turn.text)
         }
         let speakers = Set(parsed.turns.map(\.speaker)).count
         return Text(
@@ -589,6 +604,21 @@ private struct TranscriptReadingView: View {
         )
         .font(.caption).foregroundStyle(.secondary)
         .padding(.top, Theme.Space.s)
+    }
+
+    /// Count words: space-delimited tokens for Latin-style text, plus each CJK
+    /// ideograph as its own word (Chinese/Japanese have no spaces between words).
+    private static func wordCount(_ text: String) -> Int {
+        var cjk = 0
+        for scalar in text.unicodeScalars where isCJK(scalar) { cjk += 1 }
+        let spaced = text.unicodeScalars.filter { !isCJK($0) }
+        let nonCJK = String(String.UnicodeScalarView(spaced))
+            .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).count
+        return cjk + nonCJK
+    }
+
+    private static func isCJK(_ s: Unicode.Scalar) -> Bool {
+        (0x4E00...0x9FFF).contains(s.value) || (0x3400...0x4DBF).contains(s.value)
     }
 }
 

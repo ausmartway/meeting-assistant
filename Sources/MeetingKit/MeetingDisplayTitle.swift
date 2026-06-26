@@ -2,8 +2,8 @@ import Foundation
 
 /// Produces a distinguishing sidebar label for meetings that share a generic
 /// default title (e.g. "Microsoft Teams meeting", "ad-hoc meeting"), by appending
-/// the most prominent named remote speaker. For DISPLAY only — it never changes the
-/// stored meeting title (rename still works). Pure and unit-tested.
+/// a named remote speaker (the first one in the supplied order). For DISPLAY only —
+/// it never changes the stored meeting title (rename still works). Pure and tested.
 public enum MeetingDisplayTitle {
 
     public static func sidebarTitle(
