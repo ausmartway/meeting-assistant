@@ -157,9 +157,28 @@ public final class MeetingStore {
         directorySize(bundleURL(for: meetingID))
     }
 
-    /// Total bytes on disk across all meeting bundles, for the "space used" view.
+    /// Directories under the store root that hold downloaded ML models, not user
+    /// recordings — excluded from the "space used" total (see `totalSize`).
+    private static let modelDirNames: Set<String> = ["WhisperModels", "DiarizationModels"]
+
+    /// Total bytes on disk for the user's data (meeting bundles + the global speaker
+    /// library), for the "space used" view. Excludes the downloaded model caches,
+    /// which can be many GB and aren't something the user "used up".
     public func totalSize() -> Int64 {
-        directorySize(root)
+        guard
+            let entries = try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey])
+        else { return 0 }
+        var total: Int64 = 0
+        for entry in entries where !Self.modelDirNames.contains(entry.lastPathComponent) {
+            let values = try? entry.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            if values?.isRegularFile == true {
+                total += Int64(values?.fileSize ?? 0)
+            } else {
+                total += directorySize(entry)
+            }
+        }
+        return total
     }
 
     /// Recursively sum the byte size of regular files under `url`.
