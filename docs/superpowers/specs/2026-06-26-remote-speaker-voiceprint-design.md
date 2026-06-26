@@ -15,15 +15,16 @@ from that endpoint gets the same non-human label.
 
 ## Goal
 
-When the on-screen active-speaker name is **not a real human name**, identify the
-remote speaker by **voice fingerprint** instead — reusing the diarization +
-speaker-library machinery already used on the mic channel, now applied to the
-**system-audio** (remote) channel. Human on-screen names are still trusted as-is;
-voiceprints are the fallback.
+When the on-screen active-speaker name is **not confidently a real human name**,
+identify the remote speaker by **voice fingerprint** instead — reusing the
+diarization + speaker-library machinery already used on the mic channel, now
+applied to the **system-audio** (remote) channel. Only confident human on-screen
+names are trusted as-is; voiceprints are the fallback whenever unsure.
 
 Cost is paid lazily: the system channel is diarized **only when at least one
-on-screen active-speaker name is classified as non-human**. Meetings where every
-remote name reads as a person stay exactly as cheap as today.
+on-screen active-speaker name is not confidently human** (a room/device name, or an
+ambiguous string). Meetings where every remote name reads as a clear person stay
+exactly as cheap as today.
 
 ## Principles preserved
 
@@ -42,25 +43,42 @@ remote name reads as a person stay exactly as cheap as today.
 
 ```swift
 public enum HumanNameClassifier {
-    /// True when `name` looks like a person's name; false for room/device names.
+    /// True ONLY when `name` is confidently a person's name. Anything ambiguous —
+    /// including room/device names — returns false, so the caller defaults to
+    /// voiceprints whenever unsure.
     static func isHumanName(_ name: String) -> Bool
 }
 ```
 
-Best-effort, tunable. Classifies as **non-human** when the name shows
-room/device signals:
+**Bias: confident-human-only.** Per the decision to *default to voiceprints
+whenever unsure*, `isHumanName` returns `true` only when the name positively
+matches a human-name shape **and** carries none of the non-human signals.
+Everything else — room/device names *and* anything the classifier can't confidently
+call a person — returns `false`.
+
+Non-human signals (any one ⇒ `false`):
 - room/meeting keywords (EN: room, conference, huddle, boardroom, meeting, board,
   studio, lab, rally, office; CJK: 会议室 / 會議室 / 会议 / 會議 / 室),
 - device/brand tokens (poly, logitech, cisco, webex, owl, neat, crestron, rally
   bar, tap),
 - contains digits (e.g. "Room 3", "MTR-204"),
 - an ALL-CAPS token of length ≥ 3 (device IDs),
-- more than 3 whitespace-separated tokens (device strings run long).
+- more than 3 whitespace-separated tokens.
 
-Otherwise **human**: 1–3 alphabetic tokens with no digits/keywords, or a short CJK
-name (2–4 chars) without a room marker. Unit-tested with clear cases
-("John Smith" / "李伟" → human; "Boardroom" / "Poly Studio X50" / "Meeting Room 3"
-/ "会议室 A" → non-human).
+Positive human shape (required for `true`): 1–3 tokens, each an alphabetic
+capitalized word with no digits/keywords; **or** a short CJK name (2–4 chars)
+without a room marker. A name that matches no non-human signal but also doesn't fit
+the human shape (e.g. a lone lowercase token, an emoji handle, gibberish) is
+**not** confidently human → `false` → voiceprints.
+
+Unit-tested: "John Smith" / "李伟" → human; "Boardroom" / "Poly Studio X50" /
+"Meeting Room 3" / "会议室 A" → non-human; ambiguous ("guest", "x", "🎤", a 5-word
+string) → non-human (defaults to voiceprints).
+
+**Cost note:** this strict bias means system diarization triggers whenever *any*
+remote name is even ambiguous, not only for obvious room/device names — accepted in
+exchange for not mis-attributing an uncertain name. Confident human names ("John
+Smith") still skip the expensive pass.
 
 ### 2. Unified "Speaker N" numbering — `SpeakerRecognizer.resolve`
 
