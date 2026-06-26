@@ -45,16 +45,15 @@ struct MeetingProcessorDiarizationTests {
     }
 
     // Records which audio files it diarized, to prove laziness; returns one cluster.
+    // No lock needed: MeetingProcessor.process awaits diarize serially (mic, then
+    // optionally system), never concurrently.
     private final class RecordingDiarizer: Diarizing, @unchecked Sendable {
-        private let lock = NSLock()
         private(set) var files: [String] = []
         func prepare(progress: TranscribeProgressHandler?) async throws {}
         func diarize(audioFile: URL, progress: TranscribeProgressHandler?) async throws
             -> DiarizationOutcome
         {
-            lock.lock()
             files.append(audioFile.lastPathComponent)
-            lock.unlock()
             return DiarizationOutcome(
                 spans: [DiarizedSpan(start: 0, end: 5, speakerID: "spk_a")],
                 embeddings: ["spk_a": [1, 0, 0]])
