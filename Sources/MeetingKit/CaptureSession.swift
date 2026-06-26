@@ -79,7 +79,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     public func stop() async throws {
         // Stop the re-target watcher and wait for any in-flight video rebuild to
         // finish before tearing the streams down, so the two never race on the
-        // videoStream/videoWindowID state.
+        // videoStream/videoWindowID state. `await watcher?.value` is the *only*
+        // synchronization protecting this unprotected mutable state from the
+        // detached reconcile task — it must complete before we clear the fields.
         let watcher = retargetTask
         retargetTask = nil
         watcher?.cancel()
@@ -354,6 +356,10 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         else { return }  // transient fetch failure → keep current stream
         guard let window = meetingWindow(in: content) else {
             // Meeting window gone — strict: capture nothing until it reappears.
+            // Note: `onScreenWindowsOnly: true` means a *minimized* meeting window
+            // also lands here, so video stops while minimized and the watcher
+            // restarts it when the window is restored. Stop-without-restart is
+            // stable (next tick is a no-op), so this can't thrash.
             if let old = videoStream {
                 try? await old.stopCapture()
                 videoStream = nil
