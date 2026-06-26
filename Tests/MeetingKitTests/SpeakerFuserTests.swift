@@ -110,4 +110,40 @@ struct SpeakerFuserTests {
             micDiarization: [], micLabels: [:], micLabel: "Yulei Liu")
         #expect(out.first?.speaker == "Yulei Liu")
     }
+
+    @Test("remote segment with a non-human on-screen name uses the voiceprint label")
+    func remoteNonHumanUsesVoiceprint() {
+        let seg = TranscriptSegment(start: 0, end: 2, text: "hi", channel: .system)
+        let timeline = SpeakerTimeline(samples: [
+            SpeakerSample(timestamp: 0, speakerName: "Boardroom")
+        ])
+        let out = SpeakerFuser.fuse(
+            segments: [seg],
+            timeline: timeline,
+            systemDiarization: [DiarizedSpan(start: 0, end: 2, speakerID: "r1")],
+            systemLabels: ["r1": "Speaker 3"])
+        #expect(out.first?.speaker == "Speaker 3")
+    }
+
+    @Test("remote segment with a human on-screen name keeps that name")
+    func remoteHumanKeepsName() {
+        let seg = TranscriptSegment(start: 0, end: 2, text: "hi", channel: .system)
+        let timeline = SpeakerTimeline(samples: [SpeakerSample(timestamp: 0, speakerName: "Alice")])
+        let out = SpeakerFuser.fuse(
+            segments: [seg],
+            timeline: timeline,
+            systemDiarization: [DiarizedSpan(start: 0, end: 2, speakerID: "r1")],
+            systemLabels: ["r1": "Speaker 3"])
+        #expect(out.first?.speaker == "Alice")
+    }
+
+    @Test("remote segment, non-human name, no voiceprint span → unknown label")
+    func remoteNonHumanNoSpanUnknown() {
+        let seg = TranscriptSegment(start: 0, end: 2, text: "hi", channel: .system)
+        let timeline = SpeakerTimeline(samples: [
+            SpeakerSample(timestamp: 0, speakerName: "Boardroom")
+        ])
+        let out = SpeakerFuser.fuse(segments: [seg], timeline: timeline)
+        #expect(out.first?.speaker == "Speaker")
+    }
 }

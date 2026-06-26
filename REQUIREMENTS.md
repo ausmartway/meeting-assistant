@@ -124,6 +124,18 @@ Silicon. It only transcribes — summarization was intentionally removed.
   view). This is best-effort (it varies by app, theme, and layout) and degrades to
   "Speaker"; renaming (R8) is always the reliable fallback. The UI should set this
   expectation so an unnamed speaker doesn't read as a failure.
+  On-screen reads are made more reliable by post-processing: low-confidence OCR is
+  rejected, trivial name variants (whitespace, "(Host)"/"(You)", case) are merged,
+  and isolated single-frame misreads are voted out across samples
+  (`SpeakerTimelineConsolidator`, `SpeakerNameNormalizer`).
+  Capture is **window-scoped**: only the meeting window's pixels are recorded for
+  OCR (the rest of the desktop is never captured), and when no meeting window is
+  found nothing is captured. When the on-screen active-speaker name is **not
+  confidently a human name** (a shared room/device endpoint), the remote speaker is
+  identified by **voice fingerprint** instead — the system-audio channel is diarized
+  (lazily, only then) and its clusters resolved against the speaker library
+  (`HumanNameClassifier`, `DisplaySelector.pickWindow`). Local and in-room speakers
+  remain identified by voiceprint on the mic channel (R9).
 
 ### Transcripts, history & management
 - **R19 — Persistent history.** Finished meetings are saved and listed in the main

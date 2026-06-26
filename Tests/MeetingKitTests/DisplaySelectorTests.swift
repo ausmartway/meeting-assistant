@@ -10,8 +10,12 @@ import Testing
     let d2 = ScreenDisplay(id: 2, frame: CGRect(x: 1000, y: 0, width: 1000, height: 800))
     var displays: [ScreenDisplay] { [d1, d2] }
 
-    func win(_ x: CGFloat, w: CGFloat = 400, bundle: String?, pid: pid_t) -> ScreenWindow {
-        ScreenWindow(frame: CGRect(x: x, y: 100, width: w, height: 300), bundleID: bundle, pid: pid)
+    func win(_ x: CGFloat, w: CGFloat = 400, bundle: String?, pid: pid_t, id: CGWindowID = 1)
+        -> ScreenWindow
+    {
+        ScreenWindow(
+            windowID: id, frame: CGRect(x: x, y: 100, width: w, height: 300),
+            bundleID: bundle, pid: pid)
     }
 
     @Test func preferredWindowOnSecondDisplayWins() {
@@ -64,5 +68,41 @@ import Testing
         #expect(DisplaySelector.displayID(forWindow: onD2, in: displays) == 2)
         let off = CGRect(x: 5000, y: 5000, width: 100, height: 100)
         #expect(DisplaySelector.displayID(forWindow: off, in: displays) == nil)
+    }
+}
+
+@Suite struct PickWindowTests {
+    func win(_ w: CGFloat, bundle: String?, pid: pid_t, id: CGWindowID) -> ScreenWindow {
+        ScreenWindow(
+            windowID: id, frame: CGRect(x: 0, y: 0, width: w, height: 300),
+            bundleID: bundle, pid: pid)
+    }
+
+    @Test func largestPreferredWindowWins() {
+        let windows = [
+            win(400, bundle: "us.zoom.xos", pid: 1, id: 10),
+            win(800, bundle: "us.zoom.xos", pid: 1, id: 11),
+            win(900, bundle: "com.apple.Safari", pid: 2, id: 12),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: 2)
+        #expect(picked?.windowID == 11)
+    }
+
+    @Test func fallsBackToFrontmostWhenNoPreferred() {
+        let windows = [
+            win(400, bundle: "com.apple.Safari", pid: 2, id: 20),
+            win(800, bundle: "com.apple.Notes", pid: 3, id: 21),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: 3)
+        #expect(picked?.windowID == 21)
+    }
+
+    @Test func nilWhenNeitherPreferredNorFrontmost() {
+        let windows = [win(400, bundle: "com.apple.Safari", pid: 2, id: 30)]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: 9)
+        #expect(picked == nil)
     }
 }

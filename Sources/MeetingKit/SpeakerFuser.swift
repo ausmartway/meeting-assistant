@@ -27,6 +27,8 @@ public enum SpeakerFuser {
         timeline: SpeakerTimeline,
         micDiarization: [DiarizedSpan] = [],
         micLabels: [String: String] = [:],
+        systemDiarization: [DiarizedSpan] = [],
+        systemLabels: [String: String] = [:],
         micLabel: String = "Me",
         unknownLabel: String = "Speaker"
     ) -> [LabeledSegment] {
@@ -46,7 +48,19 @@ public enum SpeakerFuser {
                     speaker = micLabel
                 }
             case .system:
-                speaker = activeSpeaker(at: midpoint, in: timeline) ?? unknownLabel
+                // Trust a confident human on-screen name; otherwise (room/device or
+                // ambiguous name, or none) identify the remote speaker by voiceprint;
+                // failing that, the generic fallback.
+                let ocr = activeSpeaker(at: midpoint, in: timeline)
+                if let ocr, HumanNameClassifier.isHumanName(ocr) {
+                    speaker = ocr
+                } else if let s = span(at: midpoint, in: systemDiarization),
+                    let label = systemLabels[s.speakerID]
+                {
+                    speaker = label
+                } else {
+                    speaker = unknownLabel
+                }
             }
             return LabeledSegment(
                 start: segment.start,
@@ -65,7 +79,7 @@ public enum SpeakerFuser {
 
     /// The on-screen active speaker's name at time `t`, or nil if unknown.
     /// `timeline.samples` is guaranteed sorted by timestamp.
-    private static func activeSpeaker(at t: TimeInterval, in timeline: SpeakerTimeline) -> String? {
+    static func activeSpeaker(at t: TimeInterval, in timeline: SpeakerTimeline) -> String? {
         let samples = timeline.samples
         guard !samples.isEmpty else { return nil }
 

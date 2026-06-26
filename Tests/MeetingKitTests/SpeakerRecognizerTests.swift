@@ -83,3 +83,19 @@ struct SpeakerRecognizerTests {
         #expect(labels["c0"] == "Speaker 2")
     }
 }
+
+@Suite struct SpeakerRecognizerStartingAnonTests {
+    @Test("startingAnon offsets anonymous numbering for a second channel")
+    func startingAnonOffsets() {
+        let outcome = DiarizationOutcome(
+            spans: [
+                DiarizedSpan(start: 0, end: 1, speakerID: "c1"),
+                DiarizedSpan(start: 1, end: 2, speakerID: "c2"),
+            ],
+            embeddings: ["c1": [1, 0, 0], "c2": [0, 1, 0]])
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome, knownSpeakers: [], startingAnon: 5)
+        #expect(labels["c1"] == "Speaker 5")
+        #expect(labels["c2"] == "Speaker 6")
+    }
+}
