@@ -41,6 +41,44 @@ struct MeetingStoreTests {
         #expect(store.totalSize() == bundleOnly)
     }
 
+    @Test("totalSize and cleanup ignore orphaned capture folders (no recording.json)")
+    func orphanedBundlesExcludedAndCleaned() throws {
+        let (store, root) = try makeStore()
+        try store.save(recording(id: "real"))
+        try store.saveTranscript("# transcript", for: "real")
+        let realSize = store.totalSize()
+        #expect(realSize > 0)
+
+        // An orphan: a capture folder with audio but no recording.json.
+        let orphan = root.appendingPathComponent("adhoc-orphan", isDirectory: true)
+        try FileManager.default.createDirectory(at: orphan, withIntermediateDirectories: true)
+        try Data(count: 3_000_000).write(to: orphan.appendingPathComponent("mic.wav"))
+
+        // Not counted as "used".
+        #expect(store.totalSize() == realSize)
+
+        // Cleanup removes the orphan and leaves the real bundle listed.
+        let reclaimed = store.deleteOrphanedBundles()
+        #expect(reclaimed >= 3_000_000)
+        #expect(!FileManager.default.fileExists(atPath: orphan.path))
+        #expect(store.allRecordings().count == 1)
+    }
+
+    @Test("cleanup never removes model caches or the active (in-progress) meeting")
+    func cleanupKeepsModelsAndActive() throws {
+        let (store, root) = try makeStore()
+        let models = root.appendingPathComponent("WhisperModels", isDirectory: true)
+        try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+        try Data(count: 1_000).write(to: models.appendingPathComponent("model.bin"))
+        // An in-progress capture: audio, no recording.json yet, but its id is active.
+        let activeDir = try store.directory(for: "live-1")
+        try Data(count: 1_000).write(to: activeDir.appendingPathComponent("mic.wav"))
+
+        store.deleteOrphanedBundles(activeIDs: ["live-1"])
+        #expect(FileManager.default.fileExists(atPath: models.path))
+        #expect(FileManager.default.fileExists(atPath: activeDir.path))
+    }
+
     @Test("delete removes the meeting bundle and drops it from the listing")
     func deleteRemovesBundle() throws {
         let (store, _) = try makeStore()
