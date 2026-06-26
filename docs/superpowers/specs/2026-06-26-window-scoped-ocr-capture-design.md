@@ -21,9 +21,10 @@ meeting and nothing else. When no meeting window can be identified, capture no
 video at all (strict — never fall back to the whole screen).
 
 The OCR's intent is to name the **current (active) remote speaker** — not to
-harvest every name on screen, and not to attribute the **local user**. The
-active-speaker targeting already exists; this work makes it reliable (window scope)
-and adds self-suppression (Component 4b).
+harvest every name on screen. The active-speaker targeting already exists; this
+work makes it reliable by confining capture to the meeting window. The "not
+myself" half of the requirement is handled entirely on the **audio side** (mic
+channel + voiceprints), not in OCR — see Component 4.
 
 ## Principles preserved
 
@@ -91,53 +92,37 @@ automatically, so cross-display retargeting is mostly handled for free; the
 watcher only needs to react to the *identity* of the meeting window changing or
 its appearance/disappearance.
 
-### 4. `SpeakerSampler` — already targets the *active* speaker; add self-suppression
+### 4. `SpeakerSampler` — no change (already targets the *active* speaker)
 
-Two parts:
+`SpeakerSampler` OCRs only the chosen tile (the active-speaker highlight, or the
+dominant tile in a 1-on-1) and returns a single name via `bestName`. It never
+collects every name on screen. The whole-screen capture was why it *appeared* to
+grab arbitrary names — unrelated bright rectangles elsewhere on the desktop could
+win the highlight score. Window-scoping (Components 1–3) confines tile detection
+to the meeting window and fixes this; **no logic change is needed here.**
 
-**(a) Active speaker, not all names — already the behavior.** `SpeakerSampler`
-OCRs only the chosen tile (the active-speaker highlight, or the dominant tile in a
-1-on-1) and returns a single name via `bestName`. It never collects every name on
-screen. The whole-screen capture was why it *appeared* to grab arbitrary names —
-unrelated bright rectangles elsewhere on the desktop could win the highlight
-score. Window-scoping (Components 1–3) confines tile detection to the meeting
-window and fixes this; no logic change is needed here.
+#### Why no "self" detection belongs in OCR
 
-**(b) Don't attribute *myself* — new.** If the active speaker on screen is the
-local user, the OCR'd name is *my* name. That name only matters because
-`SpeakerFuser` carries "the most recent sample holds until the next sample," so a
-remote utterance shortly after I speak (within the ~2.5 s sample gap) could be
-mislabeled with my name. Meeting apps mark the local user's own tile with a
-self-marker — `(You)`, `(Me)`, `你`, `我`, or a bare `You`/`Me` label. We detect
-that marker and return `nil` for the sample (no name → `SpeakerFuser` degrades to
-"Speaker"), rather than storing my name in the remote timeline.
+The "name the current speaker *if it is not myself*" requirement is satisfied by
+the **audio-channel split + voiceprints**, not by anything visual:
 
-This interacts with the existing `SpeakerNameNormalizer`: `displayName` *strips*
-`(You)`/`(Me)` role suffixes, which would erase exactly the self-signal. So
-self-detection must run **before** normalization.
+- **Mic channel** carries the local user *and anyone physically in the same room*.
+  These are separated by diarization and identified by **voice fingerprints**
+  (`SpeakerRecognizer.resolve` matches each mic cluster against the enrolled
+  speaker library; the enrolled user has `isMe == true` and resolves to "Me",
+  in-room others resolve to their known names or "Speaker N"). This is the
+  existing in-room diarization feature.
+- **System-audio channel** carries the remote participants. `SpeakerFuser` applies
+  the OCR active-speaker timeline **only** to system-audio segments
+  (`SpeakerFuser.fuse` → `case .system`).
 
-New pure helper:
-
-```swift
-// SpeakerNameNormalizer
-static func isSelfLabel(_ raw: String) -> Bool
-```
-
-True when the raw OCR line is the local user's own tile: the trimmed line equals a
-self word (`you`/`me`/`你`/`我`, case-insensitive) **or** ends with a self-marker
-parenthetical (`(You)`/`(Me)`/`（你）`/`（我）`, ASCII or fullwidth,
-case-insensitive). Used in `SpeakerSampler.recognizeName`:
-
-```swift
-guard let line = Self.bestName(from: lines) else { return nil }
-if SpeakerNameNormalizer.isSelfLabel(line) { return nil }   // active speaker is me
-return SpeakerNameNormalizer.displayName(line)
-```
-
-Note `bestName` already filters bare `you`/`me`/`你`/`我` as noise, so the new
-helper's load-bearing case is the `Name (You)` form that survives `bestName` and
-would otherwise be normalized to a bare name. Detection is best-effort (apps vary),
-consistent with the rest of OCR.
+Because the local user's voice is always on the mic channel and OCR names are only
+ever applied to system-audio (remote) segments, OCR **structurally cannot** label
+the local user's speech. Self-identification (including distinguishing the local
+user from other in-room people) is the voiceprint system's job. We therefore add
+**no** marker-based or name-based self-detection to the OCR path; doing so would
+duplicate the voiceprint responsibility and rely on fragile per-app UI markers
+(some apps don't even highlight or self-mark the local user's own tile).
 
 ## Data flow
 
@@ -166,9 +151,6 @@ New/updated swift-testing (pure):
   neither matches; ties/area handling.
 - Existing `DisplaySelector.pickDisplay` tests stay green after the refactor
   (update the `ScreenWindow` test factory to pass a `windowID`).
-- `SpeakerNameNormalizer.isSelfLabel` — true for `You`/`Me`/`你`/`我` (any case),
-  for `Name (You)` / `名字（我）` (ASCII + fullwidth), false for a plain name and
-  for a non-self parenthetical like `Jane (Host)`.
 
 Integration (verified by running the app, not unit-tested): window-scoped
 `SCContentFilter`, stream sizing, reconcile/retarget, and the strict no-window
@@ -184,11 +166,9 @@ meeting window. Flag for `requirements-sync-reviewer`.
 
 1. `ScreenWindow.windowID` + `DisplaySelector.pickWindow` (+ tests; refactor
    `pickDisplay` to reuse it; fix existing tests).
-2. `SpeakerNameNormalizer.isSelfLabel` (+ tests) and wire self-suppression into
-   `SpeakerSampler.recognizeName` (Component 4b).
-3. `CaptureSession`: `meetingWindow(in:)` helper + window-based
+2. `CaptureSession`: `meetingWindow(in:)` helper + window-based
    `startVideoStream(on:)` + sizing.
-4. `CaptureSession`: `startSystemCapture` uses the window (skip when none) +
+3. `CaptureSession`: `startSystemCapture` uses the window (skip when none) +
    `videoWindowID` state.
-5. `CaptureSession`: `reconcileVideoTarget` watcher (start/rebuild/stop).
-6. REQUIREMENTS.md note + requirements-sync check.
+4. `CaptureSession`: `reconcileVideoTarget` watcher (start/rebuild/stop).
+5. REQUIREMENTS.md note + requirements-sync check.
