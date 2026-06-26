@@ -6,8 +6,11 @@ import SwiftUI
 /// the speaker-labeled transcript. Elegant, native-macOS styling (see `Theme`).
 struct MainWindowView: View {
     @EnvironmentObject private var state: AppState
-    @State private var selection: String?
-    @State private var pendingDelete: MeetingRecording?
+    /// Multi-selection of meeting ids (Cmd/Shift-click); drives the detail pane and
+    /// bulk delete.
+    @State private var selection = Set<String>()
+    /// Meetings queued for the delete confirmation (one, or many for a bulk delete).
+    @State private var pendingDelete: [MeetingRecording] = []
     @State private var searchText = ""
 
     var body: some View {
@@ -56,29 +59,49 @@ struct MainWindowView: View {
                     .background(.bar)
                 }
                 .confirmationDialog(
-                    "Delete this meeting?",
+                    deleteTitle,
                     isPresented: Binding(
-                        get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-                    presenting: pendingDelete
-                ) { recording in
-                    Button("Delete", role: .destructive) {
-                        if selection == recording.meeting.id { selection = nil }
-                        state.deleteRecording(recording)
-                        pendingDelete = nil
+                        get: { !pendingDelete.isEmpty }, set: { if !$0 { pendingDelete = [] } })
+                ) {
+                    Button(deleteButtonLabel, role: .destructive) {
+                        let targets = pendingDelete
+                        for rec in targets { selection.remove(rec.meeting.id) }
+                        state.deleteRecordings(targets)
+                        pendingDelete = []
                     }
-                    Button("Cancel", role: .cancel) { pendingDelete = nil }
-                } message: { _ in
-                    Text(
-                        "This permanently deletes the recording and its transcript. This can't be undone."
-                    )
+                    Button("Cancel", role: .cancel) { pendingDelete = [] }
+                } message: {
+                    Text(deleteMessage)
                 }
         } detail: {
             detail
                 .frame(minWidth: 480)
         }
         .toolbar { ToolbarItem(placement: .primaryAction) { recordControl } }
-        .onAppear { if selection == nil { selection = state.recordings.first?.meeting.id } }
-        .onChange(of: state.recording?.id) { _, id in if let id { selection = id } }
+        .onAppear {
+            if selection.isEmpty, let first = state.recordings.first?.meeting.id {
+                selection = [first]
+            }
+        }
+        .onChange(of: state.recording?.id) { _, id in if let id { selection = [id] } }
+    }
+
+    /// The recordings currently selected (excludes the live, unsaved recording).
+    private var selectedRecordings: [MeetingRecording] {
+        state.recordings.filter { selection.contains($0.meeting.id) }
+    }
+
+    private var deleteTitle: String {
+        pendingDelete.count <= 1
+            ? "Delete this meeting?" : "Delete \(pendingDelete.count) meetings?"
+    }
+    private var deleteButtonLabel: String {
+        pendingDelete.count <= 1 ? "Delete" : "Delete \(pendingDelete.count) Meetings"
+    }
+    private var deleteMessage: String {
+        pendingDelete.count <= 1
+            ? "This permanently deletes the recording and its transcript. This can't be undone."
+            : "This permanently deletes \(pendingDelete.count) recordings and their transcripts. This can't be undone."
     }
 
     private var sidebarList: some View {
@@ -98,9 +121,7 @@ struct MainWindowView: View {
                 ForEach(results, id: \.meeting.id) { rec in
                     meetingRow(rec)
                         .tag(rec.meeting.id)
-                        .contextMenu {
-                            Button("Delete Meeting", role: .destructive) { pendingDelete = rec }
-                        }
+                        .contextMenu { deleteMenu(for: rec) }
                 }
             } header: {
                 if !state.recordings.isEmpty {
@@ -109,21 +130,63 @@ struct MainWindowView: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search meetings")
+        // Delete key removes the current selection.
+        .onDeleteCommand { if !selectedRecordings.isEmpty { pendingDelete = selectedRecordings } }
+    }
+
+    /// Right-click delete: acts on the whole selection when the clicked row is part
+    /// of it (standard macOS behavior), otherwise just that one meeting.
+    @ViewBuilder
+    private func deleteMenu(for rec: MeetingRecording) -> some View {
+        let targets =
+            selection.contains(rec.meeting.id) && selection.count > 1 ? selectedRecordings : [rec]
+        Button(
+            targets.count == 1 ? "Delete Meeting" : "Delete \(targets.count) Meetings",
+            role: .destructive
+        ) { pendingDelete = targets }
     }
 
     @ViewBuilder
     private var detail: some View {
-        if let live = state.recording, selection == live.id {
+        if selection.count > 1 {
+            multiSelectionDetail
+        } else if let live = state.recording, selection.contains(live.id) {
             RecordingDetailView(meeting: live)
-        } else if let id = selection,
+        } else if let id = selection.first,
             let rec = state.recordings.first(where: { $0.meeting.id == id })
         {
-            MeetingDetailView(recording: rec, requestDelete: { pendingDelete = rec })
+            MeetingDetailView(recording: rec, requestDelete: { pendingDelete = [rec] })
         } else if state.recordings.isEmpty {
             firstMeetingPrompt
         } else {
             emptyDetail
         }
+    }
+
+    /// Shown when several meetings are selected: a summary with a bulk delete.
+    private var multiSelectionDetail: some View {
+        let recordings = selectedRecordings
+        return VStack(spacing: Theme.Space.m) {
+            Image(systemName: "checklist")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Theme.accent)
+            Text("\(recordings.count) meetings selected")
+                .font(.title2).fontWeight(.semibold)
+            Text("Delete them together, or pick a single meeting to read its transcript.")
+                .font(.callout).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).frame(maxWidth: 380)
+            HStack(spacing: Theme.Space.s) {
+                Button(role: .destructive) {
+                    pendingDelete = recordings
+                } label: {
+                    Label("Delete \(recordings.count) Meetings", systemImage: "trash")
+                }
+                .buttonStyle(.borderedProminent).tint(.red).controlSize(.large)
+                Button("Clear Selection") { selection = [] }
+                    .controlSize(.large)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(Theme.Space.xl)
     }
 
     // MARK: Sidebar rows
