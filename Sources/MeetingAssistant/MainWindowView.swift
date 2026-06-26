@@ -19,7 +19,6 @@ struct MainWindowView: View {
             }
         }
         .tint(Theme.accent)
-        .overlay(alignment: .top) { modelBanner }
         .overlay(alignment: .bottom) { errorBanner }
     }
 
@@ -38,15 +37,21 @@ struct MainWindowView: View {
                         .background(.bar)
                 }
                 .safeAreaInset(edge: .bottom) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "internaldrive").font(.system(size: 11))
-                        Text(
-                            "\(ByteCountFormatter.string(fromByteCount: state.storageBytes, countStyle: .file)) used"
-                        )
-                        .font(.system(size: 11))
+                    SettingsLink {
+                        HStack(spacing: 4) {
+                            Image(systemName: "internaldrive").font(.system(size: 10))
+                            Text(
+                                "\(ByteCountFormatter.string(fromByteCount: state.storageBytes, countStyle: .file)) used"
+                            )
+                            .font(.system(size: 10))
+                        }
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .help("Manage storage in Settings")
+                    .padding(.horizontal, Theme.Space.s)
                     .padding(.vertical, 6)
                     .background(.bar)
                 }
@@ -124,19 +129,30 @@ struct MainWindowView: View {
     // MARK: Sidebar rows
 
     private func meetingRow(_ rec: MeetingRecording) -> some View {
-        let count = state.meetingSpeakers(for: rec).count
+        let speakers = state.meetingSpeakers(for: rec)
+        let count = speakers.count
+        // Distinguish identical generic titles (e.g. "Microsoft Teams meeting") by
+        // appending a named remote speaker — display only, the stored title is kept.
+        let title = MeetingDisplayTitle.sidebarTitle(
+            title: rec.meeting.title,
+            providerDisplayName: rec.meeting.provider?.displayName,
+            providerShortName: rec.meeting.provider?.shortName,
+            speakers: speakers,
+            localUserName: state.settings.localUserName)
         return HStack(spacing: Theme.Space.s) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(rec.meeting.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Text(rec.recordedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Capsule().fill(.quaternary))
+                HStack(spacing: 2) {
+                    Image(systemName: "person.2").font(.system(size: 10))
+                    Text("\(count)").font(.system(size: 11, weight: .medium))
+                }
+                .foregroundStyle(.secondary)
+                .help("\(count) \(count == 1 ? "speaker" : "speakers")")
             }
         }
         .padding(.vertical, 3)
@@ -217,8 +233,9 @@ struct MainWindowView: View {
         }
     }
 
-    // The toolbar now shows only transcription progress; the record action is the
-    // prominent sidebar button.
+    // The toolbar shows transient status (transcription progress, or model
+    // preparation) anchored top-trailing — never floating over the content. The
+    // record action is the prominent sidebar button.
     @ViewBuilder
     private var recordControl: some View {
         if state.processing.current != nil {
@@ -227,29 +244,22 @@ struct MainWindowView: View {
                 Text(state.progressPhase ?? "Transcribing…").font(.caption).foregroundStyle(
                     .secondary)
             }
+        } else if state.modelPreparing {
+            HStack(spacing: 6) {
+                if let f = state.modelDownloadFraction {
+                    ProgressView(value: f).frame(width: 90)
+                    Text("\(state.modelStatusText ?? "Preparing model…") \(Int(f * 100))%")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ProgressView().controlSize(.small)
+                    Text(state.modelStatusText ?? "Preparing model…")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
     // MARK: Overlays
-
-    @ViewBuilder private var modelBanner: some View {
-        if state.modelPreparing {
-            HStack(spacing: Theme.Space.s) {
-                if let f = state.modelDownloadFraction {
-                    ProgressView(value: f).frame(width: 130)
-                    Text("\(state.modelStatusText ?? "Preparing model…") \(Int(f * 100))%")
-                } else {
-                    ProgressView().controlSize(.small)
-                    Text(state.modelStatusText ?? "Preparing model…")
-                }
-            }
-            .font(.caption)
-            .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
-            .padding(.top, Theme.Space.s)
-        }
-    }
 
     @ViewBuilder private var errorBanner: some View {
         if let error = state.lastError {
@@ -338,11 +348,9 @@ private struct MeetingDetailView: View {
             Divider()
             if state.processing.current?.id == recording.meeting.id { progressRow }
             speakersSection
-            ScrollView {
-                MarkdownText(state.transcript(for: recording) ?? "_No transcript yet._")
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            TranscriptReadingView(
+                document: state.transcript(for: recording),
+                localUserName: state.settings.localUserName)
         }
     }
 
@@ -358,12 +366,20 @@ private struct MeetingDetailView: View {
                 editableTitle
                 Text(sub).font(.subheadline).foregroundStyle(.secondary)
                 if !state.hasAudio(for: recording) {
-                    Label(
-                        "Audio cleared to save space — transcript kept. Re-transcribing isn't available.",
-                        systemImage: "externaldrive.badge.xmark"
-                    )
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                        Text(
+                            "Audio cleared to save space — transcript kept. Re-transcribing isn't available."
+                        )
+                    }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, Theme.Space.s).padding(.vertical, 5)
+                    .background(
+                        .quaternary.opacity(0.5),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                    .padding(.top, 2)
                 }
             }
             Spacer()
@@ -443,13 +459,20 @@ private struct MeetingDetailView: View {
                 Label("Make Again", systemImage: "arrow.clockwise")
             }
             .disabled(!state.modelReady || !state.hasAudio(for: recording))
-            .help("Make the transcript again")
+            .help(
+                state.hasAudio(for: recording)
+                    ? "Make the transcript again"
+                    : "Audio was cleared to save space — re-transcribing isn't available.")
+
+            // Separate the destructive action from the safe ones.
+            Divider().frame(height: 16)
 
             Button(role: .destructive) {
                 requestDelete()
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            .tint(.red)
         }
         .buttonStyle(.bordered)
         .labelStyle(.titleAndIcon)
@@ -487,7 +510,9 @@ private struct MeetingDetailView: View {
         let speakers = state.meetingSpeakers(for: recording)
         if !speakers.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                SectionLabel("Speakers — rename to teach a voice")
+                SectionLabel("Speakers")
+                Text("Renaming a speaker teaches their voice for future meetings.")
+                    .font(.caption).foregroundStyle(.secondary)
                 ForEach(speakers, id: \.self) { label in
                     SpeakerRenameRow(
                         originalLabel: label,
@@ -517,27 +542,87 @@ private struct MeetingDetailView: View {
     }
 }
 
-/// Renders the transcript markdown in a serif reading face, falling back to plain.
-private struct MarkdownText: View {
-    let content: String
-    init(_ content: String) { self.content = content }
+/// The transcript as a real document: structured per-speaker turns in a centered,
+/// measure-constrained serif column (not a raw-Markdown dump). Parses the stored
+/// document via `TranscriptParser`; Copy/Export still use the raw string.
+private struct TranscriptReadingView: View {
+    let document: String?
+    let localUserName: String
+
     var body: some View {
-        Text(
-            (try? AttributedString(
-                markdown: content,
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                ?? AttributedString(content)
+        let parsed = TranscriptParser.parse(document ?? "")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if parsed.turns.isEmpty {
+                    Text(document == nil ? "No transcript yet." : "This transcript is empty.")
+                        .font(Theme.reading).foregroundStyle(.secondary)
+                        .padding(.vertical, Theme.Space.l)
+                } else {
+                    if let note = parsed.note {
+                        Text(note)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .padding(.bottom, Theme.Space.m)
+                    }
+                    ForEach(Array(parsed.turns.enumerated()), id: \.offset) { _, turn in
+                        TurnView(turn: turn, localUserName: localUserName)
+                            .padding(.bottom, Theme.Space.m)
+                    }
+                    transcriptFooter(parsed)
+                }
+            }
+            // Constrain the measure, then center the column in the wide pane.
+            .frame(maxWidth: Theme.readingMeasure, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.vertical, Theme.Space.l)
+        }
+    }
+
+    private func transcriptFooter(_ parsed: TranscriptParser.Parsed) -> some View {
+        var words = 0
+        for turn in parsed.turns {
+            words += turn.text.split(separator: " ").count
+        }
+        let speakers = Set(parsed.turns.map(\.speaker)).count
+        return Text(
+            "\(words) \(words == 1 ? "word" : "words") · \(speakers) \(speakers == 1 ? "speaker" : "speakers")"
         )
-        .font(Theme.reading)
-        .lineSpacing(5)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Theme.Space.l).padding(.vertical, Theme.Space.l)
+        .font(.caption).foregroundStyle(.secondary)
+        .padding(.top, Theme.Space.s)
     }
 }
 
-/// A Speakers-section row: current label + inline rename. Save enables only when
-/// the draft is non-empty and changed.
+/// One speaker turn: a colored name + quiet timestamp header, serif speech beneath.
+private struct TurnView: View {
+    let turn: TranscriptParser.Turn
+    let localUserName: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+                Text(turn.speaker)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(
+                        Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
+                if !turn.time.isEmpty {
+                    Text(turn.time)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text(turn.text)
+                .font(Theme.reading)
+                .lineSpacing(6)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A Speakers-section row: a single editable name field (the source of truth — no
+/// redundant chip). Return or the Save button (shown only when the draft is
+/// non-empty and changed) commits the rename. The local user's row is marked "you".
 private struct SpeakerRenameRow: View {
     let originalLabel: String
     let localUserName: String
@@ -550,22 +635,29 @@ private struct SpeakerRenameRow: View {
         self.onRename = onRename
         _draft = State(initialValue: originalLabel)
     }
-    private var canSave: Bool { !draft.isEmpty && draft != originalLabel }
+    private var canSave: Bool {
+        !draft.trimmingCharacters(in: .whitespaces).isEmpty && draft != originalLabel
+    }
+    private var isMe: Bool { originalLabel == localUserName || originalLabel == "Me" }
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            SpeakerChip(text: originalLabel, isMe: originalLabel == localUserName).frame(
-                width: 96, alignment: .leading)
             TextField("Name", text: $draft)
-                .textFieldStyle(.roundedBorder).frame(maxWidth: 220)
+                .textFieldStyle(.roundedBorder).frame(maxWidth: 240)
                 .onSubmit { if canSave { onRename(draft) } }
-            Button {
-                onRename(draft)
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
+            if isMe {
+                Text("you").font(.caption).foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain).foregroundStyle(canSave ? Theme.accent : .secondary)
-            .disabled(!canSave).help("Save new name")
+            if canSave {
+                Button {
+                    onRename(draft)
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.accent)
+                .help("Save new name")
+            }
+            Spacer(minLength: 0)
         }
     }
 }

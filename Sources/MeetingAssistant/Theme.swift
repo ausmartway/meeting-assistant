@@ -13,8 +13,35 @@ enum Theme {
     /// document-like touch against the SF Pro UI.
     static let reading = Font.system(.body, design: .serif)
 
+    /// Comfortable reading measure (max line length) for the transcript column.
+    static let readingMeasure: CGFloat = 680
+
     /// Spacing scale used with deliberate variation (not uniform padding).
-    enum Space { static let xs: CGFloat = 6, s: CGFloat = 10, m: CGFloat = 16, l: CGFloat = 24, xl: CGFloat = 36 }
+    enum Space {
+        static let xs: CGFloat = 6, s: CGFloat = 10, m: CGFloat = 16, l: CGFloat = 24,
+            xl: CGFloat = 36
+    }
+
+    /// A small palette of muted, dark- and light-mode-safe colors for telling
+    /// speakers apart in the transcript. The local user always gets the one accent.
+    private static let speakerPalette: [Color] = [
+        Color(red: 0.20, green: 0.58, blue: 0.62),  // teal
+        Color(red: 0.80, green: 0.52, blue: 0.25),  // amber
+        Color(red: 0.78, green: 0.42, blue: 0.55),  // rose
+        Color(red: 0.45, green: 0.62, blue: 0.35),  // moss
+        Color(red: 0.55, green: 0.50, blue: 0.80),  // periwinkle
+        Color(red: 0.35, green: 0.56, blue: 0.80),  // blue
+    ]
+
+    /// A stable color for a speaker label: the accent for the local user ("Me" or
+    /// their chosen name), otherwise a deterministic pick from the muted palette so
+    /// the same speaker keeps one color throughout a transcript.
+    static func speakerColor(for speaker: String, localUserName: String) -> Color {
+        if speaker == localUserName || speaker == "Me" { return accent }
+        var hash: UInt64 = 5381
+        for byte in speaker.utf8 { hash = (hash &* 33) &+ UInt64(byte) }
+        return speakerPalette[Int(hash % UInt64(speakerPalette.count))]
+    }
 }
 
 /// A quiet section caption — small, medium-weight, secondary. Replaces shouty
