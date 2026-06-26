@@ -647,6 +647,10 @@ final class AppState: ObservableObject {
         let result = store.sweep(
             policy: settings.retentionPolicy, now: Date(), activeIDs: activeRetentionIDs
         )
+        // Also reclaim orphaned capture folders (audio with no recording.json, left
+        // by an interrupted session) — invisible in the UI and skipped by the sweep,
+        // so they'd otherwise leak disk and inflate "space used".
+        store.deleteOrphanedBundles(activeIDs: activeRetentionIDs)
         if result.bundlesDeleted > 0 { recordings = store.allRecordings() }
         refreshStorageTotal()
     }

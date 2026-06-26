@@ -158,27 +158,62 @@ public final class MeetingStore {
     }
 
     /// Directories under the store root that hold downloaded ML models, not user
-    /// recordings — excluded from the "space used" total (see `totalSize`).
+    /// recordings — never counted as "used" and never cleaned up as orphans.
     private static let modelDirNames: Set<String> = ["WhisperModels", "DiarizationModels"]
 
-    /// Total bytes on disk for the user's data (meeting bundles + the global speaker
-    /// library), for the "space used" view. Excludes the downloaded model caches,
-    /// which can be many GB and aren't something the user "used up".
+    /// Whether a directory is a real meeting bundle (has a saved `recording.json`).
+    private func isMeetingBundle(_ dir: URL) -> Bool {
+        fileManager.fileExists(atPath: dir.appendingPathComponent("recording.json").path)
+    }
+
+    /// Total bytes on disk for the user's data: real meeting bundles (those with a
+    /// saved `recording.json`) plus root-level files like the global speaker library.
+    /// This is what the "space used" view shows. It ignores the downloaded model
+    /// caches (often many GB) AND orphaned capture folders — audio left behind by a
+    /// session that started but never finished saving — since neither is data the
+    /// user can see or manage. (Orphans are reclaimed by `deleteOrphanedBundles`.)
     public func totalSize() -> Int64 {
         guard
             let entries = try? fileManager.contentsOfDirectory(
                 at: root, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey])
         else { return 0 }
         var total: Int64 = 0
-        for entry in entries where !Self.modelDirNames.contains(entry.lastPathComponent) {
+        for entry in entries {
             let values = try? entry.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             if values?.isRegularFile == true {
-                total += Int64(values?.fileSize ?? 0)
-            } else {
-                total += directorySize(entry)
+                total += Int64(values?.fileSize ?? 0)  // root files (speakers.json, …)
+            } else if isMeetingBundle(entry) {
+                total += directorySize(entry)  // a real meeting bundle
             }
+            // else: model cache or orphaned capture folder → not counted.
         }
         return total
+    }
+
+    /// Reclaim orphaned capture folders: directories that hold audio but never got a
+    /// `recording.json` (a capture that started but never finished saving — e.g. a
+    /// crash or force-quit). They're invisible in the UI and the retention sweep
+    /// skips them, so they'd leak disk forever. The model caches and any
+    /// currently-active meeting (in `activeIDs`) are never touched. Returns the bytes
+    /// reclaimed.
+    @discardableResult
+    public func deleteOrphanedBundles(activeIDs: Set<String> = []) -> Int64 {
+        let activeDirNames = Set(activeIDs.map(sanitize))
+        guard
+            let entries = try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey])
+        else { return 0 }
+        var reclaimed: Int64 = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            guard isDir, !Self.modelDirNames.contains(name), !activeDirNames.contains(name),
+                !isMeetingBundle(entry)
+            else { continue }
+            reclaimed += directorySize(entry)
+            try? fileManager.removeItem(at: entry)
+        }
+        return reclaimed
     }
 
     /// Recursively sum the byte size of regular files under `url`.
