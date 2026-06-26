@@ -13,6 +13,18 @@ struct HumanNameClassifierTests {
         #expect(HumanNameClassifier.isHumanName("Alice"))
     }
 
+    @Test("hyphenated and apostrophe human names are human")
+    func punctuatedHumanNames() {
+        #expect(HumanNameClassifier.isHumanName("Mary-Jane Smith"))
+        #expect(HumanNameClassifier.isHumanName("O'Brien"))
+        #expect(HumanNameClassifier.isHumanName("Anne-Marie"))
+    }
+
+    @Test("human names containing device-word letters survive (whole-token matching)")
+    func deviceLettersInNameSurvive() {
+        #expect(HumanNameClassifier.isHumanName("Owen Taplin"))  // contains 'tap', 'owl'-ish letters
+    }
+
     @Test("room and device names are not human")
     func roomAndDevice() {
         #expect(!HumanNameClassifier.isHumanName("Boardroom"))

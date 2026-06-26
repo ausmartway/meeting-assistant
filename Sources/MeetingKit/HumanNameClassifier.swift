@@ -47,7 +47,9 @@ public enum HumanNameClassifier {
             return tokens[0].count >= 2 && tokens[0].count <= 4
         }
         for t in tokens {
-            guard let first = t.first, first.isUppercase, t.allSatisfy({ $0.isLetter }) else {
+            guard let first = t.first, first.isUppercase,
+                t.allSatisfy({ $0.isLetter || $0 == "-" || $0 == "'" || $0 == "\u{2019}" })
+            else {
                 return false
             }
         }
