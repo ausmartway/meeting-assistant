@@ -26,10 +26,10 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var audioStream: SCStream?
     private var videoStream: SCStream?
-    /// The display the video stream currently captures (for move detection).
-    private var videoDisplayID: CGDirectDisplayID?
-    /// Periodically re-checks which display shows the meeting and rebuilds the video
-    /// stream if it moved. Never touches the audio stream.
+    /// The window the video stream currently captures (for retarget detection).
+    private var videoWindowID: CGWindowID?
+    /// Periodically re-checks which window shows the meeting and rebuilds the video
+    /// stream if it changed. Never touches the audio stream.
     private var retargetTask: Task<Void, Never>?
     private let audioEngine = AVAudioEngine()
     private var micFile: AVAudioFile?
@@ -79,7 +79,7 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     public func stop() async throws {
         // Stop the re-target watcher and wait for any in-flight video rebuild to
         // finish before tearing the streams down, so the two never race on the
-        // videoStream/videoDisplayID state.
+        // videoStream/videoWindowID state.
         let watcher = retargetTask
         retargetTask = nil
         watcher?.cancel()
@@ -92,7 +92,7 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         videoStream = nil
         audioStream = nil
-        videoDisplayID = nil
+        videoWindowID = nil
         if let configChangeObserver {
             NotificationCenter.default.removeObserver(configChangeObserver)
             self.configChangeObserver = nil
@@ -260,6 +260,19 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    /// Pixel size for the window-capture stream: the window's point size times the
+    /// backing `scale`, with the longest side capped so OCR has detail without
+    /// wasting memory. Aspect ratio is preserved. Pure + unit-tested.
+    static func captureSize(for points: CGSize, scale: CGFloat = 2, cap: CGFloat = 1920)
+        -> (Int, Int)
+    {
+        let w = max(1, points.width) * scale
+        let h = max(1, points.height) * scale
+        let longest = max(w, h)
+        let factor = longest > cap ? cap / longest : 1
+        return (Int((w * factor).rounded()), Int((h * factor).rounded()))
+    }
+
     // MARK: - System audio + frames (ScreenCaptureKit)
 
     private func startSystemCapture(systemAudioURL: URL) async throws {
@@ -284,83 +297,99 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         self.audioStream = audio
         try await audio.startCapture()
 
-        // Video stream: target the meeting's display (falls back to the primary).
-        let display = meetingDisplay(in: content) ?? primary
-        try await startVideoStream(on: display)
+        // Video stream: capture ONLY the meeting window so OCR reads just the
+        // meeting (and the rest of the desktop is never recorded). Strict: if no
+        // meeting window is found, skip video entirely — the watcher will start it
+        // if/when the window appears.
+        if let window = meetingWindow(in: content) {
+            try await startVideoStream(on: window)
+        } else {
+            Self.log.info("No meeting window found at start; video capture skipped")
+        }
         startRetargetWatcher()
     }
 
-    /// Build + start a video-only stream on `display`, replacing any current one.
-    /// Make-before-break: the new stream is started *before* the old one is stopped,
-    /// so a failed start leaves the existing video capture running (and never gaps or
-    /// dies). Audio is on its own stream and is untouched either way.
-    private func startVideoStream(on display: SCDisplay) async throws {
-        let filter = SCContentFilter(
-            display: display, excludingApplications: [], exceptingWindows: [])
+    /// Build + start a video-only stream capturing only `window`, replacing any
+    /// current one. Make-before-break: the new stream starts before the old one
+    /// stops, so a failed start leaves the existing capture running. Audio is on its
+    /// own stream and untouched.
+    private func startVideoStream(on window: SCWindow) async throws {
+        let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
         config.capturesAudio = false
-        config.width = 1280
-        config.height = 720
+        let (w, h) = Self.captureSize(for: window.frame.size)
+        config.width = w
+        config.height = h
+        config.scalesToFit = true
         config.minimumFrameInterval = CMTime(value: 1, timescale: 2)  // ~2 fps ceiling
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
         try await stream.startCapture()
 
-        // New stream is live — retire the previous one and record the switch.
         let old = videoStream
         videoStream = stream
-        videoDisplayID = display.displayID
+        videoWindowID = window.windowID
         if let old {
             try? await old.stopCapture()
         }
     }
 
-    /// Every ~5 s, if the meeting has moved to a different display, rebuild the
-    /// video stream there. Best-effort: any failure leaves the current stream running.
+    /// Every ~5 s, reconcile the video stream with the current meeting window:
+    /// retarget if it moved, stop if it's gone, start if it reappeared.
+    /// Best-effort: any transient failure leaves the current stream running.
     private func startRetargetWatcher() {
         retargetTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 if Task.isCancelled { return }
-                await self?.retargetVideoIfMoved()
+                await self?.reconcileVideoTarget()
             }
         }
     }
 
-    private func retargetVideoIfMoved() async {
+    private func reconcileVideoTarget() async {
         guard
             let content = try? await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true)
-        else { return }
-        guard let display = meetingDisplay(in: content) else { return }  // not found → keep current
-        guard display.displayID != videoDisplayID else { return }  // unchanged → nothing to do
+        else { return }  // transient fetch failure → keep current stream
+        guard let window = meetingWindow(in: content) else {
+            // Meeting window gone — strict: capture nothing until it reappears.
+            if let old = videoStream {
+                try? await old.stopCapture()
+                videoStream = nil
+                videoWindowID = nil
+                Self.log.info("Meeting window gone; video capture stopped")
+            }
+            return
+        }
+        guard window.windowID != videoWindowID else { return }  // unchanged → nothing to do
         do {
-            try await startVideoStream(on: display)
+            try await startVideoStream(on: window)
             Self.log.info(
-                "Re-targeted video capture to display \(display.displayID, privacy: .public)")
+                "Re-targeted video capture to window \(window.windowID, privacy: .public)")
         } catch {
             Self.log.error(
-                "Video re-target failed, keeping current display: \(error.localizedDescription, privacy: .public)"
+                "Video re-target failed, keeping current window: \(error.localizedDescription, privacy: .public)"
             )
         }
     }
 
-    /// Choose the SCDisplay showing the meeting via the pure `DisplaySelector`.
-    private func meetingDisplay(in content: SCShareableContent) -> SCDisplay? {
+    /// Choose the SCWindow showing the meeting via the pure `DisplaySelector.pickWindow`.
+    private func meetingWindow(in content: SCShareableContent) -> SCWindow? {
         let windows = content.windows.map { w in
             ScreenWindow(
+                windowID: w.windowID,
                 frame: w.frame,
                 bundleID: w.owningApplication?.bundleIdentifier,
                 pid: w.owningApplication?.processID ?? 0)
         }
-        let displays = content.displays.map { ScreenDisplay(id: $0.displayID, frame: $0.frame) }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let chosen = DisplaySelector.pickDisplay(
-            windows: windows, displays: displays,
+        let chosen = DisplaySelector.pickWindow(
+            windows: windows,
             preferredBundleIDs: meeting.provider?.meetingAppBundleIDs ?? [],
             frontmostPID: frontPID)
         guard let chosen else { return nil }
-        return content.displays.first { $0.displayID == chosen }
+        return content.windows.first { $0.windowID == chosen.windowID }
     }
 
     // MARK: - SCStreamOutput
