@@ -1,6 +1,6 @@
 cask "meeting-assistant" do
-  version "0.4.11"
-  sha256 "6d9be7146b6e5db7cdbdd693b50a437847d1a2c1f9979d7c5124ad37d944e189"
+  version "0.4.12"
+  sha256 "e1cbdddb28217d3c4e579bdc46b8711edb1169f3aaed4ec221d98892367d4e4b"
 
   url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg",
       verified: "github.com/ausmartway/meeting-assistant/"
