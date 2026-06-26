@@ -583,11 +583,9 @@ private struct TranscriptReadingView: View {
                     transcriptFooter(parsed)
                 }
             }
-            // Constrain the measure; center the column in the transcript area so its
-            // margins read as an intentional document (the details inspector anchors
-            // the trailing edge), rather than text hugging one side.
-            .frame(maxWidth: Theme.readingMeasure, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            // Fill the available width between the sidebar and the details inspector
+            // (no measure cap), left-aligned.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.l)
         }

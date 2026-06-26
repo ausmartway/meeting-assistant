@@ -13,9 +13,6 @@ enum Theme {
     /// document-like touch against the SF Pro UI.
     static let reading = Font.system(.body, design: .serif)
 
-    /// Comfortable reading measure (max line length) for the transcript column.
-    static let readingMeasure: CGFloat = 680
-
     /// Spacing scale used with deliberate variation (not uniform padding).
     enum Space {
         static let xs: CGFloat = 6, s: CGFloat = 10, m: CGFloat = 16, l: CGFloat = 24,
