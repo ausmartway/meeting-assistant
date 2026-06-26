@@ -98,20 +98,52 @@ public final class MeetingProcessor {
         let micLabels = SpeakerRecognizer.resolve(outcome: outcome, knownSpeakers: knownSpeakers)
         // Multi-frame voting cleans OCR misreads/variants before fusion (post-processing).
         let consolidatedTimeline = SpeakerTimelineConsolidator.consolidate(recording.timeline)
+
+        // 2c-remote. When a remote speaker's on-screen name isn't confidently a human
+        // name (a shared room/device endpoint), identify remote speakers by voiceprint:
+        // diarize the system channel and resolve its clusters. Lazy — skipped entirely
+        // when every remote name is a confident human name.
+        var systemOutcome = DiarizationOutcome(spans: [], embeddings: [:])
+        var systemLabels: [String: String] = [:]
+        if needsRemoteDiarization(segments: cleaned, timeline: consolidatedTimeline) {
+            do {
+                systemOutcome = try await diarizer.diarize(
+                    audioFile: systemURL, progress: onProgress)
+                try Task.checkCancellation()
+                let micAnon = micLabels.values.filter { $0.hasPrefix("Speaker ") }.count
+                systemLabels = SpeakerRecognizer.resolve(
+                    outcome: systemOutcome, knownSpeakers: knownSpeakers,
+                    startingAnon: 2 + micAnon)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                Self.log.error(
+                    "System diarization failed; remote speakers stay anonymous: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
         let labeled = SpeakerFuser.fuse(
             segments: cleaned,
             timeline: consolidatedTimeline,
             micDiarization: outcome.spans,
             micLabels: micLabels,
+            systemDiarization: systemOutcome.spans,
+            systemLabels: systemLabels,
             micLabel: localUserName
         )
 
-        // 2d. Persist the per-meeting speaker map (cluster voiceprints + labels) so
-        //     speakers can be renamed later without re-diarizing. Best-effort.
-        if !outcome.spans.isEmpty {
+        // 2d. Persist the merged per-meeting speaker map so any speaker (local or
+        //     remote) can be renamed later without re-diarizing. System cluster ids
+        //     are namespaced ("sys:") so they can't collide with mic cluster ids;
+        //     labels are already unique via the shared "Speaker N" numbering.
+        var mapLabels = micLabels
+        var mapEmbeddings = outcome.embeddings
+        for (cluster, label) in systemLabels { mapLabels["sys:\(cluster)"] = label }
+        for (cluster, emb) in systemOutcome.embeddings { mapEmbeddings["sys:\(cluster)"] = emb }
+        if !mapLabels.isEmpty {
             try? store.saveSpeakerMap(
-                MeetingSpeakerMap(
-                    labelByCluster: micLabels, embeddingByCluster: outcome.embeddings),
+                MeetingSpeakerMap(labelByCluster: mapLabels, embeddingByCluster: mapEmbeddings),
                 for: recording.meeting.id
             )
         }
@@ -129,6 +161,23 @@ public final class MeetingProcessor {
         )
         try store.saveTranscript(transcript, for: recording.meeting.id)
         return transcript
+    }
+
+    /// True if any remote (system) segment's on-screen active-speaker name is not
+    /// confidently a human name — meaning we should identify remote speakers by
+    /// voiceprint instead. Uses the (already consolidated) OCR timeline.
+    private func needsRemoteDiarization(
+        segments: [TranscriptSegment], timeline: SpeakerTimeline
+    ) -> Bool {
+        for seg in segments where seg.channel == .system {
+            let midpoint = (seg.start + seg.end) / 2
+            if let name = SpeakerFuser.activeSpeaker(at: midpoint, in: timeline),
+                !HumanNameClassifier.isHumanName(name)
+            {
+                return true
+            }
+        }
+        return false
     }
 
     /// "2m 14s" / "47s".
