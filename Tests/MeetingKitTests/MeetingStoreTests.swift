@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite("MeetingStore")
@@ -20,6 +21,24 @@ struct MeetingStoreTests {
             systemAudioFile: "system.wav",
             timeline: SpeakerTimeline(samples: [])
         )
+    }
+
+    @Test("totalSize excludes the downloaded model caches")
+    func totalSizeExcludesModels() throws {
+        let (store, root) = try makeStore()
+        try store.save(recording(id: "m1"))
+        try store.saveTranscript("# Hi there, this is a transcript", for: "m1")
+        let bundleOnly = store.totalSize()
+        #expect(bundleOnly > 0)
+
+        // Large model caches sit alongside the meeting bundles under the root; they
+        // must NOT count toward the user-facing "space used" total.
+        for modelDir in ["WhisperModels", "DiarizationModels"] {
+            let dir = root.appendingPathComponent(modelDir, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data(count: 5_000_000).write(to: dir.appendingPathComponent("model.bin"))
+        }
+        #expect(store.totalSize() == bundleOnly)
     }
 
     @Test("delete removes the meeting bundle and drops it from the listing")

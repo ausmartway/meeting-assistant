@@ -686,9 +686,21 @@ final class AppState: ObservableObject {
     /// Delete a saved meeting (audio + metadata + transcript). Refuses to delete a
     /// meeting that's currently recording, transcribing, or queued for it.
     func deleteRecording(_ recording: MeetingRecording) {
-        let id = recording.meeting.id
-        guard self.recording?.id != id, !processing.contains(id) else { return }
-        try? store.delete(meetingID: id)
+        deleteRecordings([recording])
+    }
+
+    /// Delete several recordings at once (bulk delete from a multi-selection),
+    /// reloading and recomputing storage a single time. Skips the live recording and
+    /// any meeting currently transcribing, exactly like the single-delete path.
+    func deleteRecordings(_ toDelete: [MeetingRecording]) {
+        var deletedAny = false
+        for recording in toDelete {
+            let id = recording.meeting.id
+            guard self.recording?.id != id, !processing.contains(id) else { continue }
+            try? store.delete(meetingID: id)
+            deletedAny = true
+        }
+        guard deletedAny else { return }
         recordings = store.allRecordings()
         refreshStorageTotal()
     }
