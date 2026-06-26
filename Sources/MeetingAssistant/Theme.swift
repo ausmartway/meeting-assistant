@@ -56,18 +56,3 @@ struct SectionLabel: View {
             .foregroundStyle(.secondary)
     }
 }
-
-/// A soft, rounded speaker chip. Subtly filled normally; accent-filled for "Me".
-struct SpeakerChip: View {
-    let text: String
-    var isMe: Bool = false
-    var body: some View {
-        Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .foregroundStyle(isMe ? .white : .primary)
-            .background(
-                Capsule().fill(isMe ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.quaternary))
-            )
-    }
-}
