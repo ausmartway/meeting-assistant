@@ -148,13 +148,13 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if selection.count > 1 {
+        // Branch on the deletable set (excludes the live recording), so a selection
+        // of "live + one saved" isn't mistaken for a 2-item bulk selection.
+        if selectedRecordings.count > 1 {
             multiSelectionDetail
         } else if let live = state.recording, selection.contains(live.id) {
             RecordingDetailView(meeting: live)
-        } else if let id = selection.first,
-            let rec = state.recordings.first(where: { $0.meeting.id == id })
-        {
+        } else if let rec = selectedRecordings.first {
             MeetingDetailView(recording: rec, requestDelete: { pendingDelete = [rec] })
         } else if state.recordings.isEmpty {
             firstMeetingPrompt
