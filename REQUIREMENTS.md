@@ -141,6 +141,12 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R19 — Persistent history.** Finished meetings are saved and listed in the main
   window (most recent first) and remain available across app restarts; selecting one
   reopens its transcript.
+- **R19b — Recurring meetings keep separate history.** Each occurrence of a
+  recurring calendar event (e.g. a weekly sync) is a distinct meeting with its own
+  recording bundle and transcript; recording one occurrence must never overwrite or
+  merge with another occurrence of the same series. (EventKit reuses one
+  `eventIdentifier` across a series, so meeting identity is keyed by event *and*
+  occurrence start time — `Meeting.occurrenceID`.)
 - **R20 — Delete a recording.** The user can delete a recording — its audio, sampled
   frames, and transcript — from the GUI (with confirmation), which frees the disk
   space it used.

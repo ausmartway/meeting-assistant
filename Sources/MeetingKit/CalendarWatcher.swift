@@ -1,5 +1,5 @@
-import Foundation
 import EventKit
+import Foundation
 
 /// Reads upcoming meetings from the macOS Calendar (EventKit) and exposes the ones
 /// that have a recognized video-conferencing link. Uses `MeetingURLParser` to pull
@@ -46,15 +46,22 @@ public final class CalendarWatcher {
 
     /// Convert an `EKEvent` to a `Meeting`, returning nil if it has no meeting link.
     static func meeting(from event: EKEvent) -> Meeting? {
-        guard let link = MeetingURLParser.parse(
-            url: event.url,
-            notes: event.notes,
-            location: event.location
-        ) else {
+        guard
+            let link = MeetingURLParser.parse(
+                url: event.url,
+                notes: event.notes,
+                location: event.location
+            )
+        else {
             return nil
         }
         return Meeting(
-            id: event.eventIdentifier ?? UUID().uuidString,
+            // Per-occurrence id: eventIdentifier alone is shared by every occurrence
+            // of a recurring event, which made occurrences overwrite each other's
+            // recording bundles.
+            id: Meeting.occurrenceID(
+                eventIdentifier: event.eventIdentifier ?? UUID().uuidString,
+                startDate: event.startDate),
             title: event.title ?? "Untitled meeting",
             startDate: event.startDate,
             endDate: event.endDate,
