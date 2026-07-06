@@ -85,6 +85,18 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
     /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
     /// so this stays pure and testable; the title reflects the detected provider
     /// when known.
+    /// A per-occurrence meeting id. EventKit hands back the *same*
+    /// `eventIdentifier` for every occurrence of a recurring event, and the
+    /// recording bundle directory is derived from `Meeting.id` — so using the raw
+    /// identifier makes next week's occurrence overwrite this week's recording.
+    /// Suffixing the occurrence's start time keeps each occurrence's recording in
+    /// its own bundle while staying deterministic across calendar refreshes.
+    public static func occurrenceID(eventIdentifier: String, startDate: Date) -> String {
+        // Whole seconds: EventKit start dates are second-precision, and truncating
+        // guards against float jitter minting a "new" occurrence.
+        "\(eventIdentifier)#\(Int(startDate.timeIntervalSince1970))"
+    }
+
     public static func adHoc(
         id: String,
         provider: MeetingProvider?,
