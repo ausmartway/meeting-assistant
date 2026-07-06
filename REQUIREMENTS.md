@@ -273,9 +273,12 @@ Silicon. It only transcribes — summarization was intentionally removed.
   throughout (see N2).
 - **N13 — Multi-display name reading.** On-screen name reading works when the meeting
   window is on a secondary display, and follows the window if it moves displays
-  mid-meeting. Video-frame capture targets the meeting's display (the conferencing
-  app's window, else the frontmost window); system-audio capture runs on its own
-  independent stream so re-targeting never interrupts it.
+  mid-meeting. Video-frame capture targets the meeting window itself: among windows
+  owned by a preferred (conferencing-app) bundle ID, one whose title matches the
+  calendar meeting's subject wins over raw window size — a bigger main-app or
+  browser window that isn't the meeting must not outrank it — falling back to the
+  largest preferred window, then the frontmost app's largest window. System-audio
+  capture runs on its own independent stream so re-targeting never interrupts it.
 
 ---
 

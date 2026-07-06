@@ -387,13 +387,15 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
                 windowID: w.windowID,
                 frame: w.frame,
                 bundleID: w.owningApplication?.bundleIdentifier,
-                pid: w.owningApplication?.processID ?? 0)
+                pid: w.owningApplication?.processID ?? 0,
+                title: w.title)
         }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let chosen = DisplaySelector.pickWindow(
             windows: windows,
             preferredBundleIDs: meeting.provider?.meetingAppBundleIDs ?? [],
-            frontmostPID: frontPID)
+            frontmostPID: frontPID,
+            meetingTitle: meeting.title)
         guard let chosen else { return nil }
         return content.windows.first { $0.windowID == chosen.windowID }
     }
