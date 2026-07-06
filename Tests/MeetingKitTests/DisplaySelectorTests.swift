@@ -72,10 +72,12 @@ import Testing
 }
 
 @Suite struct PickWindowTests {
-    func win(_ w: CGFloat, bundle: String?, pid: pid_t, id: CGWindowID) -> ScreenWindow {
+    func win(
+        _ w: CGFloat, bundle: String?, pid: pid_t, id: CGWindowID, title: String? = nil
+    ) -> ScreenWindow {
         ScreenWindow(
             windowID: id, frame: CGRect(x: 0, y: 0, width: w, height: 300),
-            bundleID: bundle, pid: pid)
+            bundleID: bundle, pid: pid, title: title)
     }
 
     @Test func largestPreferredWindowWins() {
@@ -104,5 +106,97 @@ import Testing
         let picked = DisplaySelector.pickWindow(
             windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: 9)
         #expect(picked == nil)
+    }
+
+    // The regression behind "everyone became Speaker": the Teams *main* window (or a
+    // big browser window — browsers are in Teams' preferred set) is larger than the
+    // actual meeting window, so size-only selection captures the wrong window and
+    // OCR never sees a name. The meeting window is the one whose title carries the
+    // calendar subject, so a title match must beat raw size.
+
+    @Test func titleMatchBeatsLargerMainWindow() {
+        let windows = [
+            win(
+                1600, bundle: "com.microsoft.teams2", pid: 1, id: 40,
+                title: "Chat | Microsoft Teams"),
+            win(
+                900, bundle: "com.microsoft.teams2", pid: 1, id: 41,
+                title: "ANZ/Hashicorp ADP Fortnightly catchup | Microsoft Teams"),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows,
+            preferredBundleIDs: ["com.microsoft.teams", "com.microsoft.teams2"],
+            frontmostPID: nil,
+            meetingTitle: "ANZ/Hashicorp ADP Fortnightly catchup")
+        #expect(picked?.windowID == 41)
+    }
+
+    @Test func titleMatchBeatsLargerBrowserWindow() {
+        let windows = [
+            win(
+                1900, bundle: "com.google.Chrome", pid: 2, id: 50,
+                title: "some-repo: pull requests - Google Chrome"),
+            win(
+                900, bundle: "com.microsoft.teams2", pid: 1, id: 51,
+                title: "A/NZ TFO Weekly | Microsoft Teams"),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows,
+            preferredBundleIDs: ["com.microsoft.teams2", "com.google.Chrome"],
+            frontmostPID: nil,
+            meetingTitle: "A/NZ TFO Weekly")
+        #expect(picked?.windowID == 51)
+    }
+
+    @Test func titleMatchIsCaseInsensitive() {
+        let windows = [
+            win(1600, bundle: "us.zoom.xos", pid: 1, id: 60, title: "Zoom Workplace"),
+            win(900, bundle: "us.zoom.xos", pid: 1, id: 61, title: "weekly SYNC - Zoom"),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: nil,
+            meetingTitle: "Weekly Sync")
+        #expect(picked?.windowID == 61)
+    }
+
+    @Test func fallsBackToLargestPreferredWhenNoTitleMatches() {
+        let windows = [
+            win(
+                1600, bundle: "com.microsoft.teams2", pid: 1, id: 70,
+                title: "Chat | Microsoft Teams"),
+            win(900, bundle: "com.microsoft.teams2", pid: 1, id: 71, title: nil),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows,
+            preferredBundleIDs: ["com.microsoft.teams2"],
+            frontmostPID: nil,
+            meetingTitle: "Totally Different Meeting")
+        #expect(picked?.windowID == 70)
+    }
+
+    @Test func blankMeetingTitleIsIgnored() {
+        let windows = [
+            win(1600, bundle: "com.microsoft.teams2", pid: 1, id: 80, title: "Big"),
+            win(900, bundle: "com.microsoft.teams2", pid: 1, id: 81, title: "Small"),
+        ]
+        for title in [nil, "", "  "] as [String?] {
+            let picked = DisplaySelector.pickWindow(
+                windows: windows, preferredBundleIDs: ["com.microsoft.teams2"],
+                frontmostPID: nil, meetingTitle: title)
+            #expect(picked?.windowID == 80)
+        }
+    }
+
+    @Test func titleMatchOnlyAppliesToPreferredWindows() {
+        // A stray non-meeting window (calendar, email, this app's own UI) can carry
+        // the meeting subject in its title; it must never be captured.
+        let windows = [
+            win(900, bundle: "com.apple.Notes", pid: 3, id: 90, title: "Weekly Sync notes"),
+            win(400, bundle: "us.zoom.xos", pid: 1, id: 91, title: "Zoom Workplace"),
+        ]
+        let picked = DisplaySelector.pickWindow(
+            windows: windows, preferredBundleIDs: ["us.zoom.xos"], frontmostPID: nil,
+            meetingTitle: "Weekly Sync")
+        #expect(picked?.windowID == 91)
     }
 }
