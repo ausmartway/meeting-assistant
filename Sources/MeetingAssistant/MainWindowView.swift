@@ -794,10 +794,20 @@ private struct TurnView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isPlaying ? Theme.accent.opacity(0.08) : Color.clear)
+        // The hover region must be the row's full rectangle: without an explicit
+        // contentShape, only *visible* content is hover-tracked, so the pointer
+        // "fell out" of the row while crossing the gutter toward the play button
+        // and the button vanished before it could be reached.
+        .contentShape(Rectangle())
         .onHover { hovering in hoveredTurn = hovering }
     }
 
     /// Hover play/stop for one turn. Only rendered when a clip exists.
+    /// The label carries a generous frame + contentShape so the whole gutter
+    /// area is clickable — a bare 12 px glyph with `.plain` style is nearly
+    /// impossible to hit (real bug: clicks never reached the handler). It also
+    /// stays faintly visible instead of opacity-0 (zero-opacity views aren't
+    /// hit-testable, and a visible affordance is discoverable).
     @ViewBuilder
     private var playControl: some View {
         if let clip, let playback {
@@ -811,12 +821,14 @@ private struct TurnView: View {
                 }
             } label: {
                 Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle")
+                    .font(.system(size: 14))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(isPlaying ? Theme.accent : .secondary)
             .help(isPlaying ? "Stop" : "Play this line")
-            .opacity(isPlaying || hoveredTurn ? 1 : 0)
-            .frame(width: 16)
+            .opacity(isPlaying || hoveredTurn ? 1 : 0.3)
         }
     }
 }
