@@ -41,9 +41,13 @@ Input: parsed `TranscriptParser.Turn`s, optional `[LabeledSegment]`,
 Output per turn: `ClipLocation { fileName: String, start: TimeInterval,
 end: TimeInterval }?`.
 
-- **Precise path** (segments present): the formatter writes one line per segment
-  in order, so turn *i* pairs with segment *i*; sanity-check speaker equality and
-  the rendered timestamp before trusting it. Any mismatch → fallback path.
+- **Precise path** (segments present): the formatter merges consecutive
+  same-speaker segments into one rendered line, so the locator groups segments
+  the same way (real meetings always have same-speaker adjacency) — turn *i*
+  pairs with group *i*, whose clip spans the group's first segment's start to
+  its last segment's end. Sanity-check speaker equality and the rendered
+  timestamp of the group's first segment before trusting it. Any mismatch →
+  fallback path.
 - **Fallback path** (no segments / mismatch): offset = turn's `HH:mm:ss`
   wall-clock stamp minus `recordedAt`'s clock time, +24 h if negative (midnight
   wrap). End = next turn's offset (capped at 30 s), or offset + 15 s for the

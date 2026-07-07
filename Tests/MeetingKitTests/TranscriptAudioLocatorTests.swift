@@ -105,4 +105,41 @@ struct TranscriptAudioLocatorTests {
         #expect(clips[0] == .init(fileName: "mic.wav", start: 5, end: 9))
         #expect(clips[1] == .init(fileName: "system.wav", start: 9, end: 24))
     }
+
+    @Test("precise: consecutive same-speaker segments merge into one group like the formatter")
+    func mergesSameSpeakerRuns() {
+        // Mirrors real meetings: TranscriptFormatter merges consecutive
+        // same-speaker segments into one rendered line, so segments.count
+        // (5) != turns.count after merge (3) unless the locator groups the
+        // same way. Three consecutive "Dinesh" mic segments (an in-room,
+        // non-local named speaker) must still resolve to the precise
+        // mic.wav clip spanning the whole run — not fall back to the
+        // label-guessed system.wav.
+        let segments = [
+            LabeledSegment(
+                start: 0, end: 5, text: "hello", speaker: "Yulei Liu", channel: .microphone),
+            LabeledSegment(start: 5, end: 8, text: "hi", speaker: "Dinesh", channel: .microphone),
+            LabeledSegment(
+                start: 8, end: 9, text: "there", speaker: "Dinesh", channel: .microphone),
+            LabeledSegment(
+                start: 9, end: 12, text: "folks", speaker: "Dinesh", channel: .microphone),
+            LabeledSegment(start: 12, end: 20, text: "yep", speaker: "Sam", channel: .system),
+        ]
+        let meeting = Meeting(
+            id: "m1", title: "Standup", startDate: recordedAt, endDate: recordedAt,
+            provider: nil, joinURL: nil)
+        let rendered = TranscriptFormatter.document(
+            meeting: meeting, segments: segments, baseDate: recordedAt)
+        let parsed = TranscriptParser.parse(rendered)
+        #expect(parsed.turns.count == 3)  // merged: Yulei Liu, Dinesh, Sam
+
+        let clips = locate(parsed.turns, segments: segments)
+        #expect(clips.count == 3)
+        #expect(clips[0] == .init(fileName: "mic.wav", start: 0, end: 5))
+        // The merged Dinesh run must resolve to the precise mic clip
+        // spanning first segment's start to last segment's end — not the
+        // fallback, which would guess system.wav for a non-local speaker.
+        #expect(clips[1] == .init(fileName: "mic.wav", start: 5, end: 12))
+        #expect(clips[2] == .init(fileName: "system.wav", start: 12, end: 20))
+    }
 }
