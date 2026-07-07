@@ -134,6 +134,25 @@ public final class SpeakerLibrary {
         try save()
     }
 
+    /// Additively fold a trusted voice sample into `name`'s print (creating the
+    /// speaker if new). Unlike `upsert` — a deliberate reset — `learn` never
+    /// discards what the print already knows; growth is bounded by
+    /// `VoicePrint.maxSamples` via merge-closest. `isMe` applies only when
+    /// creating a new entry; learning never flips an existing speaker's flag.
+    public func learn(
+        name: String, embedding: [Float], seconds: TimeInterval, isMe: Bool = false
+    ) throws {
+        guard !embedding.isEmpty else { return }
+        let sample = VoiceSample(embedding: embedding, seconds: seconds)
+        if let idx = speakers.firstIndex(where: { $0.name.lowercased() == name.lowercased() }) {
+            speakers[idx].samples = VoicePrint.adding(sample, to: speakers[idx].samples)
+            speakers[idx].updatedAt = Date()
+        } else {
+            speakers.append(KnownSpeaker(name: name, isMe: isMe, samples: [sample]))
+        }
+        try save()
+    }
+
     public func rename(id: UUID, to newName: String) throws {
         guard let idx = speakers.firstIndex(where: { $0.id == id }) else { return }
         speakers[idx].name = newName

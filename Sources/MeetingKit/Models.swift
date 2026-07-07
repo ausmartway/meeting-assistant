@@ -252,4 +252,13 @@ public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
         if let duration = durationByCluster[cluster], duration < minDuration { return nil }
         return embeddingByCluster[cluster]
     }
+
+    /// Seconds of speech behind the cluster currently labeled `label`, or nil
+    /// for unknown labels / maps saved before durations were recorded.
+    public func duration(forLabel label: String) -> TimeInterval? {
+        guard let cluster = labelByCluster.first(where: { $0.value == label })?.key else {
+            return nil
+        }
+        return durationByCluster[cluster]
+    }
 }
