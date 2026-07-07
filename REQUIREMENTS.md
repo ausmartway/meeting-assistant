@@ -15,7 +15,7 @@ organized*.
 ## 1. What the app is
 
 A native **macOS menu-bar + Dock app** (Swift + SwiftUI, deployment target
-**macOS 14**) that watches the calendar, prompts to capture Zoom/Meet/Teams/Webex
+**macOS 26**) that watches the calendar, prompts to capture Zoom/Meet/Teams/Webex
 meetings, and produces a **speaker-labeled transcript**, transcribed **locally** on Apple
 Silicon. It only transcribes — summarization was intentionally removed.
 
@@ -192,8 +192,8 @@ Silicon. It only transcribes — summarization was intentionally removed.
 
 ### Setup & permissions
 - **R24 — Guided first run.** On first launch the app walks the user, in plain
-  language, through approving the app (the one-time Gatekeeper "Open Anyway" on
-  macOS 15+), granting the permissions it needs (Microphone, Screen & System Audio,
+  language, through approving the app (the one-time Gatekeeper "Open
+  Anyway"), granting the permissions it needs (Microphone, Screen & System Audio,
   Calendar, Notifications, Accessibility), and enrolling their voice.
 - **R25 — Clear permission state, never silent.** If a required permission is missing
   or denied, the app clearly says what is blocked and offers a direct path to the
@@ -269,8 +269,9 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N6 — Permissions persist across updates.** Code signing uses a stable identity
   so macOS keeps TCC grants (Screen Recording, Accessibility, Mic) across rebuilds
   and updates.
-- **N7 — Platform.** macOS 14+ (Sonoma) floor; Apple Silicon; not sandboxed (needed
-  for ScreenCaptureKit system audio in a self-distributed build).
+- **N7 — Platform.** macOS 26+ (Tahoe) floor; Apple Silicon; not sandboxed (needed
+  for ScreenCaptureKit system audio in a self-distributed build). Earlier macOS
+  versions are deliberately unsupported — the owner targets current-OS Macs only.
 - **N8 — Verified by running.** Pure logic is unit-tested (TDD); framework/UI
   integrations are verified by building and running the real app (and, for UI,
   visually checked). Ship only what's verified.

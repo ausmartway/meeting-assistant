@@ -4,9 +4,10 @@ import PackageDescription
 let package = Package(
     name: "MeetingAssistant",
     platforms: [
-        // macOS 14 (Sonoma) is the floor: EventKit full-access model,
-        // ScreenCaptureKit audio capture, and the Vision OCR APIs we rely on.
-        .macOS(.v14)
+        // macOS 26 (Tahoe) is the floor — the owner targets current-OS Macs only,
+        // which lets the code use the latest SDK APIs unconditionally. (String
+        // form because swift-tools-version 5.10 predates the .v26 enum case.)
+        .macOS("26.0")
     ],
     products: [
         .executable(name: "MeetingAssistant", targets: ["MeetingAssistant"]),
@@ -17,7 +18,7 @@ let package = Package(
     dependencies: [
         // On-device speech-to-text (runs the encoder on the GPU/Neural Engine).
         .package(url: "https://github.com/argmaxinc/WhisperKit", from: "1.0.0"),
-        // On-device speaker diarization + enrollment (CoreML, macOS 14+).
+        // On-device speaker diarization + enrollment (CoreML).
         .package(url: "https://github.com/FluidInference/FluidAudio", from: "0.5.0"),
     ],
     targets: [
