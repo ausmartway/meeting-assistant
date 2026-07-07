@@ -507,6 +507,17 @@ final class AppState: ObservableObject {
         store.transcript(for: recording.meeting.id)
     }
 
+    /// Saved fused segments for exact line playback, or nil for recordings
+    /// transcribed before segments.json existed.
+    func savedSegments(for recording: MeetingRecording) -> [LabeledSegment]? {
+        store.segments(for: recording.meeting.id)
+    }
+
+    /// The meeting bundle directory holding mic.wav / system.wav.
+    func audioDirectory(for recording: MeetingRecording) -> URL? {
+        try? store.directory(for: recording.meeting.id)
+    }
+
     /// Whether a saved recording still has its audio (so it can be re-transcribed).
     /// False once retention has expired the WAVs to save space.
     func hasAudio(for recording: MeetingRecording) -> Bool {

@@ -16,7 +16,11 @@ struct SpeakerFuserTests {
     func micSegmentsAreMe() {
         let timeline = SpeakerTimeline(samples: [SpeakerSample(timestamp: 0, speakerName: "Alice")])
         let out = SpeakerFuser.fuse(segments: [mic(1, 2, "Hi all")], timeline: timeline)
-        #expect(out == [LabeledSegment(start: 1, end: 2, text: "Hi all", speaker: "Me")])
+        #expect(
+            out == [
+                LabeledSegment(
+                    start: 1, end: 2, text: "Hi all", speaker: "Me", channel: .microphone)
+            ])
     }
 
     @Test("labels a system segment with the speaker highlighted at its midpoint")

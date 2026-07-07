@@ -404,6 +404,7 @@ private struct MeetingDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @FocusState private var titleFocused: Bool
+    @StateObject private var clipPlayer = ClipPlayer()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -415,7 +416,8 @@ private struct MeetingDetailView: View {
             HStack(alignment: .top, spacing: 0) {
                 TranscriptReadingView(
                     document: state.transcript(for: recording),
-                    localUserName: state.settings.localUserName
+                    localUserName: state.settings.localUserName,
+                    playback: playbackContext
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if !state.meetingSpeakers(for: recording).isEmpty {
@@ -425,6 +427,24 @@ private struct MeetingDetailView: View {
                 }
             }
         }
+        .onDisappear { clipPlayer.stop() }
+        .onChange(of: recording.meeting.id) { _, _ in clipPlayer.stop() }
+    }
+
+    /// Everything the reading view needs to play a line, or nil when the audio
+    /// is gone (retention) — the play buttons don't render at all then.
+    private var playbackContext: TranscriptReadingView.Playback? {
+        guard state.hasAudio(for: recording),
+            let dir = state.audioDirectory(for: recording)
+        else { return nil }
+        return TranscriptReadingView.Playback(
+            segments: state.savedSegments(for: recording),
+            recordedAt: recording.recordedAt,
+            audioDirectory: dir,
+            micFileName: recording.micAudioFile,
+            systemFileName: recording.systemAudioFile,
+            player: clipPlayer
+        )
     }
 
     private var header: some View {
@@ -635,9 +655,28 @@ private struct MeetingDetailView: View {
 private struct TranscriptReadingView: View {
     let document: String?
     let localUserName: String
+    var playback: Playback? = nil
+
+    /// Context needed to play the exact audio behind a transcript line
+    /// (speaker verification, R27). Nil when there's no audio to play from.
+    struct Playback {
+        let segments: [LabeledSegment]?
+        let recordedAt: Date
+        let audioDirectory: URL
+        let micFileName: String
+        let systemFileName: String
+        let player: ClipPlayer
+    }
 
     var body: some View {
         let parsed = TranscriptParser.parse(document ?? "")
+        let clips: [TranscriptAudioLocator.ClipLocation?] =
+            playback.map { p in
+                TranscriptAudioLocator.locate(
+                    turns: parsed.turns, segments: p.segments, recordedAt: p.recordedAt,
+                    localUserName: localUserName, micFileName: p.micFileName,
+                    systemFileName: p.systemFileName)
+            } ?? Array(repeating: nil, count: parsed.turns.count)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if parsed.turns.isEmpty {
@@ -650,9 +689,12 @@ private struct TranscriptReadingView: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .padding(.bottom, Theme.Space.m)
                     }
-                    ForEach(Array(parsed.turns.enumerated()), id: \.offset) { _, turn in
-                        TurnView(turn: turn, localUserName: localUserName)
-                            .padding(.bottom, Theme.Space.m)
+                    ForEach(Array(parsed.turns.enumerated()), id: \.offset) { index, turn in
+                        TurnView(
+                            turn: turn, localUserName: localUserName, index: index,
+                            clip: clips[index], playback: playback
+                        )
+                        .padding(.bottom, Theme.Space.m)
                     }
                     transcriptFooter(parsed)
                 }
@@ -695,30 +737,87 @@ private struct TranscriptReadingView: View {
 }
 
 /// One speaker turn: a colored name + quiet timestamp header, serif speech beneath.
+/// When `playback` is provided and a clip was located for this turn, hovering the
+/// row reveals a play button (speaker verification, R27); `@ObservedObject player`
+/// re-renders the row whenever `playingTurnID` changes so exactly one row is ever
+/// highlighted/playing.
 private struct TurnView: View {
     let turn: TranscriptParser.Turn
     let localUserName: String
+    var index: Int = 0
+    var clip: TranscriptAudioLocator.ClipLocation? = nil
+    var playback: TranscriptReadingView.Playback? = nil
+    /// `ObservedObject` requires a non-optional `ObservableObject`, so rows with
+    /// no playback context observe a throwaway, never-played `ClipPlayer` — this
+    /// is what makes the row re-render whenever the real player's
+    /// `playingTurnID` changes.
+    @ObservedObject private var player: ClipPlayer
+
+    init(
+        turn: TranscriptParser.Turn, localUserName: String, index: Int = 0,
+        clip: TranscriptAudioLocator.ClipLocation? = nil,
+        playback: TranscriptReadingView.Playback? = nil
+    ) {
+        self.turn = turn
+        self.localUserName = localUserName
+        self.index = index
+        self.clip = clip
+        self.playback = playback
+        _player = ObservedObject(wrappedValue: playback?.player ?? ClipPlayer())
+    }
+
+    @State private var hoveredTurn = false
+
+    private var isPlaying: Bool { player.playingTurnID == index }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                Text(turn.speaker)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(
-                        Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
-                if !turn.time.isEmpty {
-                    Text(turn.time)
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+            playControl
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+                    Text(turn.speaker)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(
+                            Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
+                    if !turn.time.isEmpty {
+                        Text(turn.time)
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Text(turn.text)
+                    .font(Theme.reading)
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(turn.text)
-                .font(Theme.reading)
-                .lineSpacing(6)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isPlaying ? Theme.accent.opacity(0.08) : Color.clear)
+        .onHover { hovering in hoveredTurn = hovering }
+    }
+
+    /// Hover play/stop for one turn. Only rendered when a clip exists.
+    @ViewBuilder
+    private var playControl: some View {
+        if let clip, let playback {
+            Button {
+                if isPlaying {
+                    playback.player.stop()
+                } else {
+                    playback.player.play(
+                        url: playback.audioDirectory.appendingPathComponent(clip.fileName),
+                        from: clip.start, to: clip.end, turnID: index)
+                }
+            } label: {
+                Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isPlaying ? Theme.accent : .secondary)
+            .help(isPlaying ? "Stop" : "Play this line")
+            .opacity(isPlaying || hoveredTurn ? 1 : 0)
+            .frame(width: 16)
+        }
     }
 }
 

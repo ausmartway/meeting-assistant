@@ -80,6 +80,24 @@ public final class MeetingStore {
         return try? JSONDecoder().decode(MeetingSpeakerMap.self, from: data)
     }
 
+    /// Persist the fused, labeled segments (`segments.json`) so the UI can play
+    /// the exact audio clip behind each transcript line. Written on every
+    /// (re-)transcription; deleted with the bundle; harmless once audio expires.
+    public func saveSegments(_ segments: [LabeledSegment], for meetingID: String) throws {
+        let url = try directory(for: meetingID).appendingPathComponent("segments.json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(segments).write(to: url, options: .atomic)
+    }
+
+    /// The saved labeled segments, or nil for meetings transcribed before
+    /// `segments.json` existed (or an unreadable file).
+    public func segments(for meetingID: String) -> [LabeledSegment]? {
+        let url = bundleURL(for: meetingID).appendingPathComponent("segments.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([LabeledSegment].self, from: data)
+    }
+
     /// All saved recordings, newest first.
     public func allRecordings() -> [MeetingRecording] {
         let decoder = JSONDecoder()

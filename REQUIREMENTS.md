@@ -189,6 +189,13 @@ Silicon. It only transcribes — summarization was intentionally removed.
   silently. **Recognized speakers' voiceprints are never removed** — they live in the
   global speaker library outside any meeting folder, so cross-meeting recognition (R9)
   survives expiry. Manual delete (R20) still removes everything immediately.
+- **R27 — Verify a speaker by ear.** Hovering a transcript line reveals a play
+  button that plays that line's audio, so the user can check who is really
+  speaking before renaming (R8/R9). Meetings transcribed from now on store
+  exact per-line clip boundaries (`segments.json`); older recordings play a
+  best-effort window derived from the line's timestamp (and may guess the wrong
+  channel for in-room named speakers) until re-transcribed. The control is
+  absent once retention has expired the audio (R22), like "Transcript Again".
 
 ### Setup & permissions
 - **R24 — Guided first run.** On first launch the app walks the user, in plain
