@@ -1,6 +1,6 @@
 cask "meeting-assistant" do
-  version "0.4.17"
-  sha256 "7c9d5c7abd4fcc6b60db93926a0c1b76886257636973ed57a94509824eb1f600"
+  version "0.4.18"
+  sha256 "fc91ed1b33e0bdb02c809d2a76c2c5cf4eadab01e39bfd719be8aaca82a6d1ff"
 
   url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg",
       verified: "github.com/ausmartway/meeting-assistant/"
@@ -9,7 +9,9 @@ cask "meeting-assistant" do
   homepage "https://github.com/ausmartway/meeting-assistant"
 
   # macOS 26 (Tahoe) is the floor — the app targets current-OS Macs only.
-  depends_on macos: ">= :tahoe"
+  # (Symbol form: Homebrew's OSDependsOn style rule rejects ">= :tahoe" while
+  # Tahoe is the newest macOS; a bare symbol already means "this or newer".)
+  depends_on macos: :tahoe
 
   app "Meeting Assistant.app"
 
