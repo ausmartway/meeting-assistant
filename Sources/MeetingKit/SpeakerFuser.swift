@@ -66,7 +66,8 @@ public enum SpeakerFuser {
                 start: segment.start,
                 end: segment.end,
                 text: segment.text,
-                speaker: speaker
+                speaker: speaker,
+                channel: segment.channel
             )
         }
     }
