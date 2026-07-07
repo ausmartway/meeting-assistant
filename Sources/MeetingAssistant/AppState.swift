@@ -467,6 +467,19 @@ final class AppState: ObservableObject {
         }
         do {
             _ = try await processor.process(recording, progress: progress)
+            // Self-improving prints: fold every confidently-attributed cluster of
+            // this meeting back into the library, so recognition gets better the
+            // more the app hears each person. LibraryRefinement re-checks the
+            // trust gates; anonymous "Speaker N" clusters never qualify.
+            if let map = store.speakerMap(for: recording.meeting.id) {
+                for update in LibraryRefinement.updates(
+                    map: map, known: settings.speakerLibrary.all())
+                {
+                    try? settings.speakerLibrary.learn(
+                        name: update.name, embedding: update.embedding,
+                        seconds: update.seconds)
+                }
+            }
             postNotification(
                 title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
         } catch is CancellationError {
@@ -558,8 +571,11 @@ final class AppState: ObservableObject {
                 // speaker and silently disable enrollment.
                 let isMe = KnownSpeaker.preservedIsMe(
                     forName: newName, in: settings.speakerLibrary.all())
-                try? settings.speakerLibrary.upsert(
-                    name: newName, embedding: embedding, isMe: isMe)
+                try? settings.speakerLibrary.learn(
+                    name: newName, embedding: embedding,
+                    seconds: map.duration(forLabel: newName)
+                        ?? KnownSpeaker.legacySampleSeconds,
+                    isMe: isMe)
             }
             try? store.saveSpeakerMap(map, for: meetingID)
         }
