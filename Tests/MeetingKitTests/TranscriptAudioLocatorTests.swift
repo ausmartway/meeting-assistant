@@ -125,15 +125,26 @@ struct TranscriptAudioLocatorTests {
                 start: 9, end: 12, text: "folks", speaker: "Dinesh", channel: .microphone),
             LabeledSegment(start: 12, end: 20, text: "yep", speaker: "Sam", channel: .system),
         ]
+        // TranscriptFormatter.document renders in TimeZone.current (no timezone
+        // parameter), so this end-to-end test must use .current on BOTH sides —
+        // rendering and locating — or it only passes in the developer's timezone
+        // (it broke on CI, which runs in UTC).
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        let localRecordedAt = cal.date(
+            from: DateComponents(year: 2026, month: 7, day: 7, hour: 14))!
         let meeting = Meeting(
-            id: "m1", title: "Standup", startDate: recordedAt, endDate: recordedAt,
+            id: "m1", title: "Standup", startDate: localRecordedAt, endDate: localRecordedAt,
             provider: nil, joinURL: nil)
         let rendered = TranscriptFormatter.document(
-            meeting: meeting, segments: segments, baseDate: recordedAt)
+            meeting: meeting, segments: segments, baseDate: localRecordedAt)
         let parsed = TranscriptParser.parse(rendered)
         #expect(parsed.turns.count == 3)  // merged: Yulei Liu, Dinesh, Sam
 
-        let clips = locate(parsed.turns, segments: segments)
+        let clips = TranscriptAudioLocator.locate(
+            turns: parsed.turns, segments: segments, recordedAt: localRecordedAt,
+            localUserName: "Yulei Liu", micFileName: "mic.wav",
+            systemFileName: "system.wav", timeZone: .current)
         #expect(clips.count == 3)
         #expect(clips[0] == .init(fileName: "mic.wav", start: 0, end: 5))
         // The merged Dinesh run must resolve to the precise mic clip
