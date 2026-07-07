@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite("SpeakerLibrary")
@@ -16,7 +17,7 @@ struct SpeakerLibraryTests {
         try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
         let reloaded = SpeakerLibrary(url: url)
         #expect(reloaded.all().map(\.name) == ["Sam"])
-        #expect(reloaded.all().first?.embedding == [1, 0, 0])
+        #expect(reloaded.all().first?.samples[0].embedding == [1, 0, 0])
     }
 
     @Test("upsert of an existing name updates its voiceprint, not a duplicate")
@@ -26,7 +27,7 @@ struct SpeakerLibraryTests {
         try lib.upsert(name: "Sam", embedding: [1, 0, 0], isMe: false)
         try lib.upsert(name: "Sam", embedding: [0, 1, 0], isMe: false)
         #expect(lib.all().count == 1)
-        #expect(lib.all().first?.embedding == [0, 1, 0])
+        #expect(lib.all().first?.samples[0].embedding == [0, 1, 0])
     }
 
     @Test("me returns the isMe speaker")

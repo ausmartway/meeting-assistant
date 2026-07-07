@@ -467,6 +467,19 @@ final class AppState: ObservableObject {
         }
         do {
             _ = try await processor.process(recording, progress: progress)
+            // Self-improving prints: fold every confidently-attributed cluster of
+            // this meeting back into the library, so recognition gets better the
+            // more the app hears each person. LibraryRefinement re-checks the
+            // trust gates; anonymous "Speaker N" clusters never qualify.
+            if let map = store.speakerMap(for: recording.meeting.id) {
+                for update in LibraryRefinement.updates(
+                    map: map, known: settings.speakerLibrary.all())
+                {
+                    try? settings.speakerLibrary.learn(
+                        name: update.name, embedding: update.embedding,
+                        seconds: update.seconds)
+                }
+            }
             postNotification(
                 title: "Transcript ready", body: "The transcript for “\(meeting.title)” is ready.")
         } catch is CancellationError {
@@ -547,13 +560,23 @@ final class AppState: ObservableObject {
 
         // 2. If we have a speaker map, learn the voiceprint under the new name and
         //    update the map's label so a later rename starts from the right place.
-        if var map, let embedding = map.relabel(from: oldLabel, to: newName) {
-            // Preserve the existing speaker's `isMe` flag: renaming a cluster to an
-            // existing name (e.g. "Me") must not demote it to a regular speaker and
-            // silently disable enrollment.
-            let isMe = KnownSpeaker.preservedIsMe(
-                forName: newName, in: settings.speakerLibrary.all())
-            try? settings.speakerLibrary.upsert(name: newName, embedding: embedding, isMe: isMe)
+        //    Learning is gated on the cluster having enough speech behind it — a
+        //    renamed junk cluster must not poison the library with a noise
+        //    voiceprint under a real person's name.
+        let learnable = map?.learnableVoiceprint(forLabel: oldLabel)
+        if var map, map.relabel(from: oldLabel, to: newName) != nil {
+            if let embedding = learnable {
+                // Preserve the existing speaker's `isMe` flag: renaming a cluster to
+                // an existing name (e.g. "Me") must not demote it to a regular
+                // speaker and silently disable enrollment.
+                let isMe = KnownSpeaker.preservedIsMe(
+                    forName: newName, in: settings.speakerLibrary.all())
+                try? settings.speakerLibrary.learn(
+                    name: newName, embedding: embedding,
+                    seconds: map.duration(forLabel: newName)
+                        ?? KnownSpeaker.legacySampleSeconds,
+                    isMe: isMe)
+            }
             try? store.saveSpeakerMap(map, for: meetingID)
         }
 

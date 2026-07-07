@@ -18,7 +18,7 @@ import Testing
         let me = lib.me
         #expect(me?.name == "Yulei Liu")
         #expect(me?.isMe == true)
-        #expect(me?.embedding == [1, 2, 3])
+        #expect(me?.samples[0].embedding == [1, 2, 3])
         #expect(lib.all().contains { $0.name == "Sam" && !$0.isMe })
     }
 

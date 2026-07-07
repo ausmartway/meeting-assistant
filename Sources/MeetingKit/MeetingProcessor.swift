@@ -139,11 +139,17 @@ public final class MeetingProcessor {
         //     labels are already unique via the shared "Speaker N" numbering.
         var mapLabels = micLabels
         var mapEmbeddings = outcome.embeddings
+        var mapDurations = SpeakerRecognizer.speechDuration(byCluster: outcome.spans)
         for (cluster, label) in systemLabels { mapLabels["sys:\(cluster)"] = label }
         for (cluster, emb) in systemOutcome.embeddings { mapEmbeddings["sys:\(cluster)"] = emb }
+        for (cluster, dur) in SpeakerRecognizer.speechDuration(byCluster: systemOutcome.spans) {
+            mapDurations["sys:\(cluster)"] = dur
+        }
         if !mapLabels.isEmpty {
             try? store.saveSpeakerMap(
-                MeetingSpeakerMap(labelByCluster: mapLabels, embeddingByCluster: mapEmbeddings),
+                MeetingSpeakerMap(
+                    labelByCluster: mapLabels, embeddingByCluster: mapEmbeddings,
+                    durationByCluster: mapDurations),
                 for: recording.meeting.id
             )
         }

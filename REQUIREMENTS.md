@@ -111,10 +111,24 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R9 — Cross-meeting recognition.** Naming a speaker stores that voice's print in
   a **local speaker library**, so the same person is auto-recognized by name in
   future meetings. The local user is just the enrolled member of that library.
+  Exception: when the renamed cluster has too little total speech to be a
+  trustworthy voiceprint (`SpeakerRecognizer.minSpeechDuration`), the transcript
+  rename still applies but the library is **not** taught — a junk/noise cluster
+  must never poison a known speaker's voiceprint (see N4).
+- **R9c — Self-improving voiceprints.** A known speaker's print is a small set of
+  voice samples (bounded; distinct voice modes like headset vs meeting room are
+  preserved by merging the closest pair at the cap). Every confidently-attributed
+  cluster — an automatic match or an explicit rename that clears the trust gates —
+  enriches that speaker's print, so recognition improves with exposure and no
+  single meeting can dominate or corrupt a print.
 - **R10 — Conservative matching.** Only **confident** voice matches are auto-named;
   weak matches stay anonymous rather than risk the wrong name. A known name is
-  assigned only when it clearly beats the next-nearest different speaker (a margin),
-  so an ambiguous voiceprint never grabs a wrong name.
+  assigned by the nearest of the speaker's stored voice samples, and only when (a) it
+  clearly beats the next-nearest different speaker (a margin), so an ambiguous
+  voiceprint never grabs a wrong name, and (b) the cluster has enough total speech
+  behind it — a few seconds of noise can embed arbitrarily close to a real voiceprint
+  by chance, so short clusters stay anonymous ("Speaker N") regardless of match
+  distance.
 - **R10c — Re-transcribe re-recognizes.** Re-transcribing a meeting clears its
   previous per-meeting speaker identifications and recognizes speakers afresh; the
   cross-meeting speaker library (R9) is preserved.

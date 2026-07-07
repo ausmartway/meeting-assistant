@@ -5,14 +5,18 @@ import Testing
 
 @Suite("SpeakerRecognizer")
 struct SpeakerRecognizerTests {
-    private func outcome(_ pairs: [(String, [Float])]) -> DiarizationOutcome {
+    /// Clusters get 30 s of speech each — comfortably past the trust floor, so
+    /// these tests exercise the embedding logic, not the duration gate.
+    private func outcome(_ pairs: [(String, [Float])], spanLength: Double = 30)
+        -> DiarizationOutcome
+    {
         var spans: [DiarizedSpan] = []
         var emb: [String: [Float]] = [:]
         var t = 0.0
         for (id, e) in pairs {
-            spans.append(DiarizedSpan(start: t, end: t + 1, speakerID: id))
+            spans.append(DiarizedSpan(start: t, end: t + spanLength, speakerID: id))
             emb[id] = e
-            t += 1
+            t += spanLength
         }
         return DiarizationOutcome(spans: spans, embeddings: emb)
     }
@@ -81,6 +85,76 @@ struct SpeakerRecognizerTests {
             outcome: outcome([("c0", [1, 0, 0])]),
             knownSpeakers: lib, threshold: 0.4)
         #expect(labels["c0"] == "Speaker 2")
+    }
+
+    // The "Joshua Li" bug: a junk cluster (a few seconds of noise / garbled audio)
+    // sat extremely close to a known voiceprint and confidently took a real
+    // person's name. However good the embedding match, a cluster with almost no
+    // speech behind it is not evidence someone was in the meeting.
+
+    @Test("a short cluster never takes a known name, even on a perfect match")
+    func shortClusterStaysAnonymous() {
+        let lib = [known("Joshua", [1, 0, 0])]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("junk", [1, 0, 0])], spanLength: 5),
+            knownSpeakers: lib, threshold: 0.4)
+        #expect(labels["junk"] == "Speaker 2")
+    }
+
+    @Test("duration gate sums a cluster's spans, not just one")
+    func durationSumsAcrossSpans() {
+        // Three 6 s spans = 18 s total — past the floor even though each span alone
+        // is under it.
+        let lib = [known("Sam", [1, 0, 0])]
+        let spans = [
+            DiarizedSpan(start: 0, end: 6, speakerID: "c0"),
+            DiarizedSpan(start: 20, end: 26, speakerID: "c0"),
+            DiarizedSpan(start: 40, end: 46, speakerID: "c0"),
+        ]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: DiarizationOutcome(spans: spans, embeddings: ["c0": [1, 0, 0]]),
+            knownSpeakers: lib, threshold: 0.4)
+        #expect(labels["c0"] == "Sam")
+    }
+
+    @Test("short clusters keep their anonymous numbering position")
+    func shortClusterNumbering() {
+        let lib = [known("Sam", [1, 0, 0])]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("junk", [1, 0, 0]), ("real", [1, 0, 0])], spanLength: 5)
+                .with(extraSpans: [DiarizedSpan(start: 100, end: 130, speakerID: "real")]),
+            knownSpeakers: lib, threshold: 0.4)
+        // "junk" (5 s) is anonymous; "real" (5 + 30 s) wins the name.
+        #expect(labels["junk"] == "Speaker 2")
+        #expect(labels["real"] == "Sam")
+    }
+
+    @Test("speechDuration sums per-cluster span lengths")
+    func speechDurationHelper() {
+        let spans = [
+            DiarizedSpan(start: 0, end: 6, speakerID: "a"),
+            DiarizedSpan(start: 10, end: 12, speakerID: "b"),
+            DiarizedSpan(start: 20, end: 26, speakerID: "a"),
+        ]
+        let durations = SpeakerRecognizer.speechDuration(byCluster: spans)
+        #expect(durations["a"] == 12)
+        #expect(durations["b"] == 2)
+    }
+
+    @Test("a speaker matches on any of their samples, not just the first")
+    func multiSampleMatch() {
+        var sam = KnownSpeaker(name: "Sam", isMe: false, embedding: [1, 0, 0])
+        sam.samples.append(VoiceSample(embedding: [0, 1, 0], seconds: 60))
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [0, 1, 0])]),  // matches Sam's SECOND sample
+            knownSpeakers: [sam], threshold: 0.3)
+        #expect(labels["c0"] == "Sam")
+    }
+}
+
+extension DiarizationOutcome {
+    fileprivate func with(extraSpans: [DiarizedSpan]) -> DiarizationOutcome {
+        DiarizationOutcome(spans: spans + extraSpans, embeddings: embeddings)
     }
 }
 

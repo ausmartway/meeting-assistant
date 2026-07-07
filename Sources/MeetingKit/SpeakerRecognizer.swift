@@ -18,12 +18,32 @@ public enum SpeakerRecognizer {
     /// named "Larry". A confident match clears this margin comfortably (~0.4+).
     public static let defaultMargin: Float = 0.10
 
+    /// Minimum total speech (seconds) a cluster needs before its voiceprint is
+    /// trusted — for taking a known speaker's name here, and for being *learned*
+    /// into the library on rename (`MeetingSpeakerMap.learnableVoiceprint`). A
+    /// few seconds of noise can embed arbitrarily close to a real person (the
+    /// "Joshua Li" mislabel matched at cosine distance 0.136); no distance
+    /// threshold stops that, only the amount of speech behind the centroid does.
+    public static let minSpeechDuration: TimeInterval = 15
+
+    /// Total speech per cluster, summed across its diarized spans.
+    public static func speechDuration(byCluster spans: [DiarizedSpan])
+        -> [String: TimeInterval]
+    {
+        var durations: [String: TimeInterval] = [:]
+        for span in spans {
+            durations[span.speakerID, default: 0] += max(0, span.end - span.start)
+        }
+        return durations
+    }
+
     /// Returns clusterID → display label ("Me", "Sam", "Speaker 2", …).
     public static func resolve(
         outcome: DiarizationOutcome,
         knownSpeakers: [KnownSpeaker],
         threshold: Float = defaultThreshold,
         margin: Float = defaultMargin,
+        minMatchDuration: TimeInterval = minSpeechDuration,
         startingAnon: Int = 2
     ) -> [String: String] {
         // Order of first appearance across the spans (stable, deterministic).
@@ -35,8 +55,12 @@ public enum SpeakerRecognizer {
         }
 
         // Pass 1: each cluster's nearest known speaker within threshold (or nil).
+        // Clusters with too little speech never match — their centroid is noise,
+        // however close it lands to someone in the library.
+        let durations = speechDuration(byCluster: outcome.spans)
         var match: [String: (name: String, distance: Float)] = [:]
         for cluster in clustersInOrder {
+            guard durations[cluster, default: 0] >= minMatchDuration else { continue }
             if let m = bestMatch(
                 outcome.embeddings[cluster] ?? [], knownSpeakers, threshold, margin)
             {
@@ -84,7 +108,7 @@ public enum SpeakerRecognizer {
         _ embedding: [Float], _ known: [KnownSpeaker], _ threshold: Float, _ margin: Float
     ) -> (name: String, distance: Float)? {
         let scored = known.map {
-            (name: $0.name, distance: VoiceMatch.cosineDistance(embedding, $0.embedding))
+            (name: $0.name, distance: VoicePrint.distance(embedding, to: $0.samples))
         }
         guard let best = scored.min(by: { $0.distance < $1.distance }),
             best.distance <= threshold

@@ -81,10 +81,6 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
         self.joinURL = joinURL
     }
 
-    /// Build a synthetic meeting for an **ad-hoc** capture — one the user starts
-    /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
-    /// so this stays pure and testable; the title reflects the detected provider
-    /// when known.
     /// A per-occurrence meeting id. EventKit hands back the *same*
     /// `eventIdentifier` for every occurrence of a recurring event, and the
     /// recording bundle directory is derived from `Meeting.id` — so using the raw
@@ -97,6 +93,10 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
         "\(eventIdentifier)#\(Int(startDate.timeIntervalSince1970))"
     }
 
+    /// Build a synthetic meeting for an **ad-hoc** capture — one the user starts
+    /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
+    /// so this stays pure and testable; the title reflects the detected provider
+    /// when known.
     public static func adHoc(
         id: String,
         provider: MeetingProvider?,
@@ -201,9 +201,28 @@ public struct MeetingRecording: Codable, Sendable, Equatable {
 public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
     public var labelByCluster: [String: String]
     public var embeddingByCluster: [String: [Float]]
-    public init(labelByCluster: [String: String], embeddingByCluster: [String: [Float]]) {
+    /// Seconds of speech behind each cluster's voiceprint. Empty for maps saved
+    /// before durations existed (treated as trustworthy — see
+    /// `learnableVoiceprint`).
+    public var durationByCluster: [String: TimeInterval]
+
+    public init(
+        labelByCluster: [String: String],
+        embeddingByCluster: [String: [Float]],
+        durationByCluster: [String: TimeInterval] = [:]
+    ) {
         self.labelByCluster = labelByCluster
         self.embeddingByCluster = embeddingByCluster
+        self.durationByCluster = durationByCluster
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        labelByCluster = try c.decode([String: String].self, forKey: .labelByCluster)
+        embeddingByCluster = try c.decode([String: [Float]].self, forKey: .embeddingByCluster)
+        // Absent in maps saved before durations were recorded.
+        durationByCluster =
+            try c.decodeIfPresent([String: TimeInterval].self, forKey: .durationByCluster) ?? [:]
     }
 
     /// Relabel the cluster currently shown as `oldLabel` to `newLabel`, returning
@@ -216,5 +235,30 @@ public struct MeetingSpeakerMap: Codable, Sendable, Equatable {
         }
         labelByCluster[cluster] = newLabel
         return embeddingByCluster[cluster]
+    }
+
+    /// The voiceprint to teach the library when the user renames `label` — or nil
+    /// when the cluster has too little speech to be a trustworthy voiceprint
+    /// (renaming a junk cluster must not contaminate the library; the transcript
+    /// rename itself is not gated). Legacy maps without recorded durations keep
+    /// the old always-learn behavior.
+    public func learnableVoiceprint(
+        forLabel label: String,
+        minDuration: TimeInterval = SpeakerRecognizer.minSpeechDuration
+    ) -> [Float]? {
+        guard let cluster = labelByCluster.first(where: { $0.value == label })?.key else {
+            return nil
+        }
+        if let duration = durationByCluster[cluster], duration < minDuration { return nil }
+        return embeddingByCluster[cluster]
+    }
+
+    /// Seconds of speech behind the cluster currently labeled `label`, or nil
+    /// for unknown labels / maps saved before durations were recorded.
+    public func duration(forLabel label: String) -> TimeInterval? {
+        guard let cluster = labelByCluster.first(where: { $0.value == label })?.key else {
+            return nil
+        }
+        return durationByCluster[cluster]
     }
 }
