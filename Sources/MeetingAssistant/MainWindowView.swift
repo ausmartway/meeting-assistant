@@ -529,13 +529,13 @@ private struct MeetingDetailView: View {
             Button {
                 Task { await state.reprocess(recording) }
             } label: {
-                Label("Make Again", systemImage: "arrow.clockwise")
+                Label("Transcript Again", systemImage: "arrow.clockwise")
             }
-            .disabled(!state.modelReady || !state.hasAudio(for: recording))
-            .help(
-                state.hasAudio(for: recording)
-                    ? "Make the transcript again"
-                    : "Audio was cleared to save space — re-transcribing isn't available.")
+            .disabled(
+                !state.modelReady || !state.hasAudio(for: recording)
+                    || state.processing.contains(recording.meeting.id)
+            )
+            .help(transcriptAgainHelp)
 
             // Separate the destructive action from the safe ones.
             Divider().frame(height: 16)
@@ -549,6 +549,17 @@ private struct MeetingDetailView: View {
         }
         .buttonStyle(.bordered)
         .labelStyle(.titleAndIcon)
+    }
+
+    /// Tooltip for "Transcript Again", explaining why it's unavailable when it is.
+    private var transcriptAgainHelp: String {
+        if state.processing.contains(recording.meeting.id) {
+            return "This meeting is already being transcribed."
+        }
+        if !state.hasAudio(for: recording) {
+            return "Audio was cleared to save space — re-transcribing isn't available."
+        }
+        return "Make the transcript again"
     }
 
     private var progressRow: some View {

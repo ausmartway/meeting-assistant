@@ -16,12 +16,16 @@ public enum AppOperation: Sendable {
 public func userFacingMessage(for operation: AppOperation, error: Error? = nil) -> String {
     switch operation {
     case .startRecording:
-        return "Couldn’t start recording. Open Settings and make sure Screen Recording and Microphone access are turned on."
+        return
+            "Couldn’t start recording. Open Settings and make sure Screen Recording and Microphone access are turned on."
     case .stopRecording:
-        return "Something went wrong while finishing up. Your audio was saved — open the meeting and choose “Make Transcript Again.”"
+        return
+            "Something went wrong while finishing up. Your audio was saved — open the meeting and choose “Transcript Again.”"
     case .transcribing:
-        return "Couldn’t finish the transcript. Your audio is saved — open the meeting and choose “Make Transcript Again.”"
+        return
+            "Couldn’t finish the transcript. Your audio is saved — open the meeting and choose “Transcript Again.”"
     case .modelDownload:
-        return "Couldn’t download the transcription model. Check your internet connection, then try again."
+        return
+            "Couldn’t download the transcription model. Check your internet connection, then try again."
     }
 }
