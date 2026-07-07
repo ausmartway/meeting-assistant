@@ -166,6 +166,9 @@ public final class MeetingProcessor {
             note: note
         )
         try store.saveTranscript(transcript, for: recording.meeting.id)
+        // Persist the fused segments so each transcript line can be played back
+        // (speaker verification). Best-effort: a failure only disables playback.
+        try? store.saveSegments(labeled, for: recording.meeting.id)
         return transcript
     }
 
