@@ -106,7 +106,10 @@ struct SettingsView: View {
                 }
             }
         }
-        .padding()
+        // Grouped forms scroll; a plain Form in the fixed-size Settings window
+        // silently clips once the Known-speakers list grows past the frame,
+        // making later entries unreachable.
+        .formStyle(.grouped)
     }
 
     // MARK: - Permissions
