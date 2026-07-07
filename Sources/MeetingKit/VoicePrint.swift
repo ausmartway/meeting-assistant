@@ -18,11 +18,21 @@ public enum VoicePrint {
 
     /// Add a trusted sample: append below `cap`; at the cap, merge the closest
     /// pair among existing + incoming (duration-weighted) so diversity is kept.
-    /// Unusable incoming embeddings (empty / zero-magnitude / length-mismatched
-    /// with every existing sample) leave `samples` unchanged.
+    /// An unusable incoming embedding (empty / zero-magnitude, judged by its own
+    /// self-distance) is rejected outright, even against an empty `samples`.
+    /// Otherwise, an incoming embedding whose length mismatches every existing
+    /// sample also leaves `samples` unchanged.
     public static func adding(
         _ sample: VoiceSample, to samples: [VoiceSample], cap: Int = maxSamples
     ) -> [VoiceSample] {
+        // Reject the incoming sample outright when its own embedding is unusable
+        // (empty / zero-magnitude): self-distance is `.infinity` exactly in that
+        // case. This must be checked independent of `samples` — an empty existing
+        // list must not wave through an unusable incoming embedding, and a junk
+        // empty-embedding sample already in `samples` must not block all future
+        // learning by making every existing distance `.infinity`.
+        guard VoiceMatch.cosineDistance(sample.embedding, sample.embedding) != .infinity
+        else { return samples }
         guard
             samples.isEmpty
                 || samples.contains(where: {

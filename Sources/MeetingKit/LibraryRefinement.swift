@@ -27,6 +27,10 @@ public enum LibraryRefinement {
             guard
                 let speaker = known.first(where: { $0.name.lowercased() == label.lowercased() }),
                 let embedding = map.embeddingByCluster[cluster], !embedding.isEmpty,
+                // Intentional divergence from `MeetingSpeakerMap.learnableVoiceprint`:
+                // that path treats a legacy no-duration map as learnable on an
+                // explicit user rename, but auto-refinement here is stricter and
+                // skips clusters with no recorded duration outright. Do not unify.
                 let seconds = map.durationByCluster[cluster],
                 seconds >= SpeakerRecognizer.minSpeechDuration
             else { continue }

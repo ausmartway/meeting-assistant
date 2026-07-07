@@ -61,5 +61,10 @@ struct VoicePrintTests {
         let existing = [sample([1, 0, 0])]
         #expect(VoicePrint.adding(sample([], seconds: 60), to: existing) == existing)
         #expect(VoicePrint.adding(sample([0, 0, 0], seconds: 60), to: existing) == existing)
+        // An unusable incoming embedding is rejected outright even against an
+        // empty existing list — it must not be waved through just because there's
+        // nothing yet to compare it to.
+        #expect(VoicePrint.adding(sample([], seconds: 60), to: []) == [])
+        #expect(VoicePrint.adding(sample([0, 0, 0], seconds: 60), to: []) == [])
     }
 }

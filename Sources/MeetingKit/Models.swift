@@ -81,10 +81,6 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
         self.joinURL = joinURL
     }
 
-    /// Build a synthetic meeting for an **ad-hoc** capture — one the user starts
-    /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
-    /// so this stays pure and testable; the title reflects the detected provider
-    /// when known.
     /// A per-occurrence meeting id. EventKit hands back the *same*
     /// `eventIdentifier` for every occurrence of a recurring event, and the
     /// recording bundle directory is derived from `Meeting.id` — so using the raw
@@ -97,6 +93,10 @@ public struct Meeting: Identifiable, Codable, Sendable, Equatable {
         "\(eventIdentifier)#\(Int(startDate.timeIntervalSince1970))"
     }
 
+    /// Build a synthetic meeting for an **ad-hoc** capture — one the user starts
+    /// manually with no calendar entry. `id` is supplied by the caller (a UUID)
+    /// so this stays pure and testable; the title reflects the detected provider
+    /// when known.
     public static func adHoc(
         id: String,
         provider: MeetingProvider?,
