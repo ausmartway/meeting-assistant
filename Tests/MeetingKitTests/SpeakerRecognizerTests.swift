@@ -140,6 +140,16 @@ struct SpeakerRecognizerTests {
         #expect(durations["a"] == 12)
         #expect(durations["b"] == 2)
     }
+
+    @Test("a speaker matches on any of their samples, not just the first")
+    func multiSampleMatch() {
+        var sam = KnownSpeaker(name: "Sam", isMe: false, embedding: [1, 0, 0])
+        sam.samples.append(VoiceSample(embedding: [0, 1, 0], seconds: 60))
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [0, 1, 0])]),  // matches Sam's SECOND sample
+            knownSpeakers: [sam], threshold: 0.3)
+        #expect(labels["c0"] == "Sam")
+    }
 }
 
 extension DiarizationOutcome {

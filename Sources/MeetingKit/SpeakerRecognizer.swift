@@ -108,11 +108,7 @@ public enum SpeakerRecognizer {
         _ embedding: [Float], _ known: [KnownSpeaker], _ threshold: Float, _ margin: Float
     ) -> (name: String, distance: Float)? {
         let scored = known.map {
-            (
-                name: $0.name,
-                distance: $0.samples.map { VoiceMatch.cosineDistance(embedding, $0.embedding) }
-                    .min() ?? .infinity
-            )
+            (name: $0.name, distance: VoicePrint.distance(embedding, to: $0.samples))
         }
         guard let best = scored.min(by: { $0.distance < $1.distance }),
             best.distance <= threshold
