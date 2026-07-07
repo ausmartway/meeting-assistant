@@ -50,7 +50,9 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R3b — Stop transcription.** The user can stop the in-flight transcript from the
   menu bar or the main window. Stopping is silent (no notification), leaves any
   queued meetings transcribing, and keeps the stopped meeting re-transcribable
-  ("Make Transcript Again") — nothing partial is written.
+  ("Transcript Again") — nothing partial is written. "Transcript Again" is
+  disabled while that meeting is already transcribing or queued, so the same
+  meeting can't be enqueued twice.
 - **R3c — Meeting names.** A recording is named after its **calendar invite subject**
   whenever one applies — including when "Record a meeting now" is pressed *during* a
   calendar meeting that is in progress. Otherwise it is a generic **"ad-hoc meeting"**.
@@ -182,7 +184,7 @@ Silicon. It only transcribes — summarization was intentionally removed.
   out-of-the-box without setup but power users can tune or disable it. A retention
   sweep runs at launch and daily, skipping any meeting that is recording or
   transcribing. After a recording's audio is reclaimed, its transcript stays readable
-  in history; only "Make Transcript Again" (which needs the audio) becomes
+  in history; only "Transcript Again" (which needs the audio) becomes
   unavailable, and the UI says so ("Audio cleared to save space") rather than failing
   silently. **Recognized speakers' voiceprints are never removed** — they live in the
   global speaker library outside any meeting folder, so cross-meeting recognition (R9)
@@ -220,7 +222,7 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R16 — Dock app.** Ships as a Dock-first app (Dock icon on by default) while
   keeping the menu-bar item as a lightweight status + quick-record companion.
 - **R16b — Actions are visible buttons, not menus.** Actions a user performs on a
-  selected recording (Copy, Export/Save, Reveal, Make Transcript Again, Delete,
+  selected recording (Copy, Export/Save, Reveal, Transcript Again, Delete,
   rename, etc.) are exposed as **clearly labeled buttons in the right-hand detail
   pane**, not tucked into context menus, menu-bar submenus, or right-click menus.
   Buttons are discoverable and lower-effort for end-users; hidden menus are not.

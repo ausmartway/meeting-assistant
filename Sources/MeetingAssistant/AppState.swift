@@ -485,7 +485,7 @@ final class AppState: ObservableObject {
         } catch is CancellationError {
             // User stopped this transcript: silent — no error banner, no "ready"
             // notification. The recording stays on disk with no transcript and can
-            // be re-run later via "Make Transcript Again".
+            // be re-run later via "Transcript Again".
         } catch {
             lastError = userFacingMessage(for: .transcribing, error: error)
         }
