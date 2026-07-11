@@ -2,6 +2,8 @@ import MeetingKit
 import SwiftUI
 
 /// Settings: permissions status + re-grant, and transcription model selection.
+/// Every tab is a grouped form (the System Settings look); grouped forms scroll,
+/// so nothing clips in the fixed-size window.
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
 
@@ -13,7 +15,7 @@ struct SettingsView: View {
             modelsTab.tabItem { Label("Models", systemImage: "cpu") }
             storageTab.tabItem { Label("Storage", systemImage: "internaldrive") }
         }
-        .frame(width: 460, height: 360)
+        .frame(width: 520, height: 440)
         .task { await state.permissions.refresh() }
     }
 
@@ -21,25 +23,28 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
-            Toggle(
-                "Show icon in the Dock",
-                isOn: Binding(
-                    get: { state.settings.showDockIcon },
-                    set: { state.settings.showDockIcon = $0 }
+            Section {
+                Toggle(
+                    "Show icon in the Dock",
+                    isOn: Binding(
+                        get: { state.settings.showDockIcon },
+                        set: { state.settings.showDockIcon = $0 }
+                    )
                 )
-            )
-            .onChange(of: state.settings.showDockIcon) {
-                state.applyDockIconSetting()
+                .onChange(of: state.settings.showDockIcon) {
+                    state.applyDockIconSetting()
+                }
+            } footer: {
+                Text(
+                    "Keeps a Dock icon so you can always open Meeting Assistant — even "
+                        + "when the menu-bar icon is hidden because the menu bar is full "
+                        + "(for example on a laptop screen with a notch). Turn off for a "
+                        + "menu-bar-only app."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
-            Text(
-                "Keeps a Dock icon so you can always open Meeting Assistant — even "
-                    + "when the menu-bar icon is hidden because the menu bar is full "
-                    + "(for example on a laptop screen with a notch). Turn off for a "
-                    + "menu-bar-only app."
-            )
-            .font(.caption).foregroundStyle(.secondary)
         }
-        .padding()
+        .formStyle(.grouped)
     }
 
     // MARK: - Speakers (in-room diarization)
@@ -118,14 +123,16 @@ struct SettingsView: View {
         // Drive these rows from the same SetupCapability source as onboarding so the
         // names match exactly across both screens.
         Form {
-            ForEach(SetupCapability.allCases, id: \.self) { permissionRow($0) }
-
-            Text(
-                "If a switch won't turn on, open System Settings → Privacy & Security and enable Meeting Assistant there."
-            )
-            .font(.caption).foregroundStyle(.secondary)
+            Section {
+                ForEach(SetupCapability.allCases, id: \.self) { permissionRow($0) }
+            } footer: {
+                Text(
+                    "If a switch won't turn on, open System Settings → Privacy & Security and enable Meeting Assistant there."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .padding()
+        .formStyle(.grouped)
     }
 
     private func permissionRow(_ capability: SetupCapability) -> some View {
@@ -159,77 +166,95 @@ struct SettingsView: View {
 
     private var modelsTab: some View {
         Form {
-            // The everyday view: just whether transcription is ready. No model
-            // jargon or tuning knobs — sensible defaults are chosen for the user.
-            LabeledContent("Transcription") {
-                if state.modelPreparing {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text(state.modelStatusText ?? "Preparing…")
-                    }
-                } else if state.modelReady {
-                    Label("Ready", systemImage: "checkmark.seal").foregroundStyle(.green)
-                } else if state.modelFailed {
-                    Button("Retry download") { Task { await state.prepareModel() } }
-                } else {
-                    Button("Download") { Task { await state.prepareModel() } }
-                }
+            Section {
+                // The everyday view: just whether transcription is ready. No model
+                // jargon or tuning knobs — sensible defaults are chosen for the user.
+                transcriptionStatusRow
+            } footer: {
+                Text("Transcription runs 100% on your Mac. Audio never leaves this computer.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
-            if state.modelFailed, let status = state.modelStatusText {
-                Text(status).font(.caption).foregroundStyle(.orange)
-            }
+            advancedSection
+        }
+        .formStyle(.grouped)
+    }
 
-            Text("Transcription runs 100% on your Mac. Audio never leaves this computer.")
-                .font(.caption).foregroundStyle(.secondary)
-
-            // Power-user options, collapsed by default so they don't add noise.
-            DisclosureGroup("Advanced") {
-                Picker(
-                    "Quality",
-                    selection: Binding(
-                        get: { state.settings.transcriptionModel },
-                        set: { state.settings.transcriptionModel = $0 }
-                    )
-                ) {
-                    ForEach(TranscriptionModel.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
+    @ViewBuilder
+    private var transcriptionStatusRow: some View {
+        LabeledContent("Transcription") {
+            if state.modelPreparing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(state.modelStatusText ?? "Preparing…")
                 }
-                .onChange(of: state.settings.transcriptionModel) {
-                    // Switching quality downloads a different model.
-                    Task { await state.prepareModel() }
-                }
-                Text(
-                    "Higher quality is more accurate but downloads a larger model "
-                        + "(up to ~1.6 GB) and transcribes a little slower."
-                )
-                .font(.caption).foregroundStyle(.secondary)
-
-                Picker(
-                    "Engine",
-                    selection: Binding(
-                        get: { state.settings.transcriptionEngine },
-                        set: { state.settings.transcriptionEngine = $0 }
-                    )
-                ) {
-                    ForEach(TranscriptionEngine.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
-                }
-                .onChange(of: state.settings.transcriptionEngine) {
-                    // Switching engines loads a different model.
-                    Task { await state.prepareModel() }
-                }
-                Text(
-                    "Automatic uses fast Parakeet for English/European speech and "
-                        + "WhisperKit for Mandarin and other languages. Pick a specific "
-                        + "engine to override."
-                )
-                .font(.caption).foregroundStyle(.secondary)
+            } else if state.modelReady {
+                Label("Ready", systemImage: "checkmark.seal").foregroundStyle(.green)
+            } else if state.modelFailed {
+                Button("Retry download") { Task { await state.prepareModel() } }
+            } else {
+                Button("Download") { Task { await state.prepareModel() } }
             }
         }
-        .padding()
+
+        if state.modelFailed, let status = state.modelStatusText {
+            Text(status).font(.caption).foregroundStyle(.orange)
+        }
+    }
+
+    /// Power-user options, collapsed by default so they don't add noise.
+    private var advancedSection: some View {
+        Section {
+            DisclosureGroup("Advanced") {
+                advancedOptions
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var advancedOptions: some View {
+        Picker(
+            "Quality",
+            selection: Binding(
+                get: { state.settings.transcriptionModel },
+                set: { state.settings.transcriptionModel = $0 }
+            )
+        ) {
+            ForEach(TranscriptionModel.allCases, id: \.self) {
+                Text($0.displayName).tag($0)
+            }
+        }
+        .onChange(of: state.settings.transcriptionModel) {
+            // Switching quality downloads a different model.
+            Task { await state.prepareModel() }
+        }
+        Text(
+            "Higher quality is more accurate but downloads a larger model "
+                + "(up to ~1.6 GB) and transcribes a little slower."
+        )
+        .font(.caption).foregroundStyle(.secondary)
+
+        Picker(
+            "Engine",
+            selection: Binding(
+                get: { state.settings.transcriptionEngine },
+                set: { state.settings.transcriptionEngine = $0 }
+            )
+        ) {
+            ForEach(TranscriptionEngine.allCases, id: \.self) {
+                Text($0.displayName).tag($0)
+            }
+        }
+        .onChange(of: state.settings.transcriptionEngine) {
+            // Switching engines loads a different model.
+            Task { await state.prepareModel() }
+        }
+        Text(
+            "Automatic uses fast Parakeet for English/European speech and "
+                + "WhisperKit for Mandarin and other languages. Pick a specific "
+                + "engine to override."
+        )
+        .font(.caption).foregroundStyle(.secondary)
     }
 
     // MARK: - Storage (retention)
@@ -290,7 +315,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
         .task { state.refreshStorageTotal() }
     }
 }

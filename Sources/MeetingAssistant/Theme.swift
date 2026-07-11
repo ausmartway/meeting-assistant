@@ -48,7 +48,7 @@ struct SectionLabel: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
+            .font(.caption.weight(.semibold))
             .tracking(0.6)
             .foregroundStyle(.secondary)
     }
