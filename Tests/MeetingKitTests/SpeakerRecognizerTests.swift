@@ -75,26 +75,26 @@ struct SpeakerRecognizerTests {
 
     @Test("ambiguous match between two known speakers stays anonymous")
     func ambiguousMatchIsAnonymous() {
-        // c0 sits almost equidistant between Larry and Me (both well within the
+        // c0 sits almost equidistant between Robin and Me (both well within the
         // threshold, only ~0.014 apart) — like a noisy / over-segmented voiceprint.
         // A confident match must clearly beat the runner-up, so this must NOT grab
-        // "Larry" (the real-world bug: a fragment of the user's own voice was named
+        // "Robin" (the real-world bug: a fragment of the user's own voice was named
         // after a different person it happened to be marginally closer to).
-        let lib = [known("Larry", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
+        let lib = [known("Robin", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
         let labels = SpeakerRecognizer.resolve(
             outcome: outcome([("c0", [1, 0, 0])]),
             knownSpeakers: lib, threshold: 0.4)
         #expect(labels["c0"] == "Speaker 2")
     }
 
-    // The "Joshua Li" bug: a junk cluster (a few seconds of noise / garbled audio)
+    // The noise-magnet bug: a junk cluster (a few seconds of noise / garbled audio)
     // sat extremely close to a known voiceprint and confidently took a real
     // person's name. However good the embedding match, a cluster with almost no
     // speech behind it is not evidence someone was in the meeting.
 
     @Test("a short cluster never takes a known name, even on a perfect match")
     func shortClusterStaysAnonymous() {
-        let lib = [known("Joshua", [1, 0, 0])]
+        let lib = [known("Alice", [1, 0, 0])]
         let labels = SpeakerRecognizer.resolve(
             outcome: outcome([("junk", [1, 0, 0])], spanLength: 5),
             knownSpeakers: lib, threshold: 0.4)
@@ -156,7 +156,7 @@ struct SpeakerRecognizerTests {
 
     @Test("the short-cluster rescue never applies to a non-Me speaker")
     func shortClusterNoRescueForOthers() {
-        let lib = [known("Joshua", [1, 0, 0])]
+        let lib = [known("Alice", [1, 0, 0])]
         let labels = SpeakerRecognizer.resolve(
             outcome: outcome([("junk", [1, 0, 0])], spanLength: 5),
             knownSpeakers: lib)
@@ -174,7 +174,7 @@ struct SpeakerRecognizerTests {
 
     @Test("an ambiguous short cluster (margin to another name) is not rescued")
     func shortClusterAmbiguousNotRescued() {
-        let lib = [known("Larry", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
+        let lib = [known("Robin", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
         let labels = SpeakerRecognizer.resolve(
             outcome: outcome([("c0", [1, 0, 0])], spanLength: 5),
             knownSpeakers: lib)

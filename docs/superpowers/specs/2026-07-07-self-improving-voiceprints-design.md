@@ -12,8 +12,8 @@ A known speaker's voiceprint is a single embedding, and `SpeakerLibrary.upsert`
 - Prints reflect one meeting's mic/room/headset, so a person's real voice can sit
   0.2+ away from their own print (the local user's cluster missed the margin gate
   and fell to "Speaker 2").
-- One rename on a bad cluster wipes a good print (how "Larry Song" and
-  "Joshua Li" became contaminated).
+- One rename on a bad cluster wipes a good print (how two real colleagues'
+  prints became contaminated).
 - The library never gets better on its own; most meetings teach nothing.
 
 Requirement: *voiceprints should self-improve — the more voice the app has for a

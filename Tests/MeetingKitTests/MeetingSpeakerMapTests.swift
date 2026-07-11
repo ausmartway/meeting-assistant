@@ -31,7 +31,8 @@ struct MeetingSpeakerMapTests {
 }
 
 /// Renaming a junk cluster (seconds of noise) must not teach the library its
-/// voiceprint — that's how "Joshua Li" became a magnet for noise. The transcript
+/// voiceprint — that's how a real colleague's print became a magnet for noise.
+/// The transcript
 /// rename itself still happens; only the learning is gated.
 @Suite("MeetingSpeakerMap learning gate")
 struct MeetingSpeakerMapLearningTests {

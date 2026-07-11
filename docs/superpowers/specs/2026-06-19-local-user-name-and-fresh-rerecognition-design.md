@@ -8,7 +8,7 @@
 1. The local user is labelled the generic **"Me"** in transcripts and the UI. The owner
    wants their real name (defaulting to the macOS account name, editable).
 2. On **re-transcribe**, the previous transcription's speaker identifications persist
-   (the per-meeting speaker map), so a stale/wrong label (e.g. a bogus "Larry Song")
+   (the per-meeting speaker map), so a stale/wrong label (e.g. a bogus "Jane Doe")
    survives. Re-transcribing should re-recognize speakers from scratch and drop the
    prior identifications.
 
@@ -71,7 +71,7 @@ public enum LocalUserName {
 - `MeetingProcessor.process` calls it **at the start**, before diarize/resolve/fuse, so
   every (re-)transcription begins with no prior per-meeting identifications:
   - First transcription: no map yet → no-op.
-  - Re-transcription: clears the stale map (drops e.g. "Larry Song"), then recomputes.
+  - Re-transcription: clears the stale map (drops e.g. "Jane Doe"), then recomputes.
 - The fresh run re-recognizes against the **global** library (diarization on) or labels
   mic = `localUserName` / remote = on-screen name or "Speaker" (diarization off).
 - The global `SpeakerLibrary` is never cleared here.
@@ -101,7 +101,7 @@ Pure / unit-tested (swift-testing):
 
 Verified by running (N8): transcripts and the UI show the account name (e.g.
 "Yulei Liu") instead of "Me"; editing the name in Settings updates future transcripts
-and the "me" highlight; re-transcribing the mislabeled meeting drops "Larry Song".
+and the "me" highlight; re-transcribing the mislabeled meeting drops "Jane Doe".
 
 ## Out of scope (YAGNI)
 

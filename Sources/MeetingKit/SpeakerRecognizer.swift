@@ -14,16 +14,17 @@ public enum SpeakerRecognizer {
     /// (cosine distance) to be trusted. Without it, a noisy / over-segmented
     /// voiceprint sitting almost equidistant between two enrolled people grabs
     /// whichever name it's marginally closer to — the cause of a real mislabel where
-    /// a fragment of the user's own voice (0.244 from "Larry", 0.274 from "Me") was
-    /// named "Larry". A confident match clears this margin comfortably (~0.4+).
+    /// a fragment of the user's own voice (0.244 from a colleague's print, 0.274
+    /// from "Me") was named after the colleague. A confident match clears this
+    /// margin comfortably (~0.4+).
     public static let defaultMargin: Float = 0.10
 
     /// Minimum total speech (seconds) a cluster needs before its voiceprint is
     /// trusted — for taking a known speaker's name here, and for being *learned*
     /// into the library on rename (`MeetingSpeakerMap.learnableVoiceprint`). A
-    /// few seconds of noise can embed arbitrarily close to a real person (the
-    /// "Joshua Li" mislabel matched at cosine distance 0.136); no distance
-    /// threshold stops that, only the amount of speech behind the centroid does.
+    /// few seconds of noise can embed arbitrarily close to a real person (a real
+    /// noise-magnet mislabel matched a colleague at cosine distance 0.136); no
+    /// distance threshold stops that, only the speech behind the centroid does.
     public static let minSpeechDuration: TimeInterval = 15
 
     /// Tighter distance bound under which a *short* cluster (below
@@ -33,7 +34,7 @@ public enum SpeakerRecognizer {
     /// a confident Me-match there manufactures a phantom "Speaker N" out of the
     /// user's own fragmented voice — the observed solo-meeting bug. The rescue
     /// is deliberately Me-only: taking *another person's* name still requires
-    /// the full duration gate (the "Joshua Li" incident), and callers labeling
+    /// the full duration gate (the noise-magnet incident above), and callers labeling
     /// the system channel disable it by passing `shortMeThreshold: nil`.
     public static let defaultShortMeThreshold: Float = 0.30
 
