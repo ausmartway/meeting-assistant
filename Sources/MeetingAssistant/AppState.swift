@@ -602,8 +602,14 @@ final class AppState: ObservableObject {
         do {
             try store.save(updated)
             if let current = store.transcript(for: m.id) {
-                try? store.saveTranscript(
-                    TranscriptTitleEditor.retitle(current, to: trimmed), for: m.id)
+                do {
+                    try store.saveTranscript(
+                        TranscriptTitleEditor.retitle(current, to: trimmed), for: m.id)
+                } catch {
+                    // The sidebar title renamed but the transcript heading didn't —
+                    // say so rather than leaving them silently out of sync (R25).
+                    lastError = "Renamed, but couldn’t update the transcript’s heading."
+                }
             }
             recordings = store.allRecordings()
         } catch {
@@ -621,10 +627,18 @@ final class AppState: ObservableObject {
         let meetingID = recording.meeting.id
         let map = store.speakerMap(for: meetingID)
 
-        // 1. Rewrite the rendered transcript's labels.
+        // 1. Rewrite the rendered transcript's labels. If this fails, stop before
+        //    teaching the library: learning the voiceprint under a name the
+        //    transcript doesn't show would leave the two silently inconsistent.
         guard let current = store.transcript(for: meetingID) else { return }
         let updated = TranscriptRelabeler.rename(in: current, from: oldLabel, to: newName)
-        try? store.saveTranscript(updated, for: meetingID)
+        do {
+            try store.saveTranscript(updated, for: meetingID)
+        } catch {
+            lastError = "Couldn’t rename the speaker."
+            objectWillChange.send()
+            return
+        }
 
         // 2. If we have a speaker map, learn the voiceprint under the new name and
         //    update the map's label so a later rename starts from the right place.
@@ -789,11 +803,24 @@ final class AppState: ObservableObject {
     /// any meeting currently transcribing, exactly like the single-delete path.
     func deleteRecordings(_ toDelete: [MeetingRecording]) {
         var deletedAny = false
+        var failedCount = 0
         for recording in toDelete {
             let id = recording.meeting.id
             guard self.recording?.id != id, !processing.contains(id) else { continue }
-            try? store.delete(meetingID: id)
-            deletedAny = true
+            do {
+                try store.delete(meetingID: id)
+                deletedAny = true
+            } catch {
+                failedCount += 1
+            }
+        }
+        if failedCount > 0 {
+            // R25: a failed delete must not look like it worked — the row would
+            // silently reappear on the next reload otherwise.
+            lastError =
+                failedCount == 1
+                ? "Couldn’t delete a recording."
+                : "Couldn’t delete \(failedCount) recordings."
         }
         guard deletedAny else { return }
         recordings = store.allRecordings()

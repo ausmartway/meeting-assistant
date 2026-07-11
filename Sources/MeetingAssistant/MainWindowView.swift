@@ -671,7 +671,13 @@ private struct MeetingDetailView: View {
         panel.nameFieldStringValue = "\(suggestedName).md"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            // R25: the user picked a destination and expects a file there — a
+            // failed write (permissions, disk full) must not look like success.
+            state.lastError = "Couldn’t save the transcript to “\(url.lastPathComponent)”."
+        }
     }
 }
 
