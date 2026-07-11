@@ -10,8 +10,12 @@ enum Theme {
     static let accent = Color(red: 0.36, green: 0.30, blue: 0.86)
 
     /// A serif (New York) reading face for transcript bodies — the one expressive,
-    /// document-like touch against the SF Pro UI.
-    static let reading = Font.system(.body, design: .serif)
+    /// document-like touch against the SF Pro UI. Sized via a semantic text style
+    /// (not a fixed point size) so it follows the user's system text-size setting;
+    /// `.title3` (15 pt regular by default) over `.body` (13 pt) because sustained
+    /// document reading wants a larger face than UI chrome — cf. Books / Safari
+    /// Reader defaults.
+    static let reading = Font.system(.title3, design: .serif)
 
     /// Spacing scale used with deliberate variation (not uniform padding).
     enum Space {

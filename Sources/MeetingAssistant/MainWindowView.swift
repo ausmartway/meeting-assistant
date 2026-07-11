@@ -732,9 +732,10 @@ private struct TranscriptReadingView: View {
                 }
             }
             // A comfortable reading measure (~85 characters of serif body),
-            // centered in whatever width the sidebar and inspector leave free.
+            // anchored to the leading edge — a centered column reads as floating
+            // in a wide window next to the header/actions, which are left-aligned.
             .frame(maxWidth: 660, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.l)
         }
