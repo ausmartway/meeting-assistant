@@ -26,6 +26,17 @@ public enum SpeakerRecognizer {
     /// threshold stops that, only the amount of speech behind the centroid does.
     public static let minSpeechDuration: TimeInterval = 15
 
+    /// Tighter distance bound under which a *short* cluster (below
+    /// `minSpeechDuration`) may still take the enrolled **Me** speaker's name.
+    /// Rationale: on the mic channel the fallback label for the very same audio
+    /// is already "Me" (diarization gaps default to the mic label), so refusing
+    /// a confident Me-match there manufactures a phantom "Speaker N" out of the
+    /// user's own fragmented voice — the observed solo-meeting bug. The rescue
+    /// is deliberately Me-only: taking *another person's* name still requires
+    /// the full duration gate (the "Joshua Li" incident), and callers labeling
+    /// the system channel disable it by passing `shortMeThreshold: nil`.
+    public static let defaultShortMeThreshold: Float = 0.30
+
     /// Total speech per cluster, summed across its diarized spans.
     public static func speechDuration(byCluster spans: [DiarizedSpan])
         -> [String: TimeInterval]
@@ -44,6 +55,7 @@ public enum SpeakerRecognizer {
         threshold: Float = defaultThreshold,
         margin: Float = defaultMargin,
         minMatchDuration: TimeInterval = minSpeechDuration,
+        shortMeThreshold: Float? = defaultShortMeThreshold,
         startingAnon: Int = 2
     ) -> [String: String] {
         // Order of first appearance across the spans (stable, deterministic).
@@ -59,11 +71,20 @@ public enum SpeakerRecognizer {
         // however close it lands to someone in the library.
         let durations = speechDuration(byCluster: outcome.spans)
         var match: [String: (name: String, distance: Float)] = [:]
+        var gated = Set<String>()  // clusters that passed the duration gate
         for cluster in clustersInOrder {
-            guard durations[cluster, default: 0] >= minMatchDuration else { continue }
-            if let m = bestMatch(
-                outcome.embeddings[cluster] ?? [], knownSpeakers, threshold, margin)
+            let embedding = outcome.embeddings[cluster] ?? []
+            if durations[cluster, default: 0] >= minMatchDuration {
+                if let m = bestMatch(embedding, knownSpeakers, threshold, margin) {
+                    match[cluster] = m
+                    gated.insert(cluster)
+                }
+            } else if let tight = shortMeThreshold,
+                let m = bestMatch(embedding, knownSpeakers, tight, margin),
+                knownSpeakers.first(where: { $0.name == m.name })?.isMe == true
             {
+                // Short-cluster rescue: Me only, tighter threshold (see
+                // `defaultShortMeThreshold` for the full rationale).
                 match[cluster] = m
             }
         }
@@ -71,12 +92,16 @@ public enum SpeakerRecognizer {
         // A known name must map to at most ONE cluster — the closest. Other
         // clusters that matched the same name fall back to anonymous, so we never
         // print two "Sam" turns (which would also confuse the rename/relearn flow).
+        // A duration-gated cluster always outranks a rescued short one: 30 s of
+        // evidence beats a closer-but-tiny fragment.
         var winnerForName: [String: String] = [:]  // name → winning cluster id
         for (cluster, m) in match {
-            if let current = winnerForName[m.name], let cur = match[current],
-                cur.distance <= m.distance
-            {
-                continue
+            if let current = winnerForName[m.name], let cur = match[current] {
+                if gated.contains(current) != gated.contains(cluster) {
+                    if gated.contains(current) { continue }
+                } else if cur.distance <= m.distance {
+                    continue
+                }
             }
             winnerForName[m.name] = cluster
         }

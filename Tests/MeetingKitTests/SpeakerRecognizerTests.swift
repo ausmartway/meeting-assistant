@@ -129,6 +129,76 @@ struct SpeakerRecognizerTests {
         #expect(labels["real"] == "Sam")
     }
 
+    // The phantom-"Speaker 2" bug: in a short solo meeting the diarizer fragmented
+    // the user's own voice into a small cluster; the duration gate blocked its
+    // (confident) match to the enrolled voiceprint, minting a phantom speaker —
+    // while the very same audio in diarization gaps defaulted to "Me" with no
+    // evidence at all. Short clusters may therefore match the *enrolled Me*
+    // speaker under a tighter distance threshold; other names stay duration-gated.
+
+    @Test("a short cluster confidently matching the enrolled Me takes the Me name")
+    func shortClusterRescuedToMe() {
+        let lib = [known("Yulei", [1, 0, 0], isMe: true)]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [1, 0.85, 0])], spanLength: 5),  // dist ≈ 0.24
+            knownSpeakers: lib)
+        #expect(labels["c0"] == "Yulei")
+    }
+
+    @Test("a short cluster within the normal threshold but outside the tight one stays anonymous")
+    func shortClusterOutsideTightThreshold() {
+        let lib = [known("Yulei", [1, 0, 0], isMe: true)]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [1, 1.2, 0])], spanLength: 5),  // dist ≈ 0.36
+            knownSpeakers: lib)
+        #expect(labels["c0"] == "Speaker 2")
+    }
+
+    @Test("the short-cluster rescue never applies to a non-Me speaker")
+    func shortClusterNoRescueForOthers() {
+        let lib = [known("Joshua", [1, 0, 0])]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("junk", [1, 0, 0])], spanLength: 5),
+            knownSpeakers: lib)
+        #expect(labels["junk"] == "Speaker 2")
+    }
+
+    @Test("the short-cluster rescue can be disabled (system channel)")
+    func shortClusterRescueDisabled() {
+        let lib = [known("Yulei", [1, 0, 0], isMe: true)]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [1, 0, 0])], spanLength: 5),
+            knownSpeakers: lib, shortMeThreshold: nil)
+        #expect(labels["c0"] == "Speaker 2")
+    }
+
+    @Test("an ambiguous short cluster (margin to another name) is not rescued")
+    func shortClusterAmbiguousNotRescued() {
+        let lib = [known("Larry", [1, 0.1, 0]), known("Me", [1, 0.2, 0], isMe: true)]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: outcome([("c0", [1, 0, 0])], spanLength: 5),
+            knownSpeakers: lib)
+        #expect(labels["c0"] == "Speaker 2")
+    }
+
+    @Test("a duration-gated cluster beats a rescued short cluster for the Me name")
+    func gatedClusterBeatsRescuedForMe() {
+        // The short cluster is CLOSER, but the long cluster has 30 s of evidence —
+        // it must keep the name; the rescued fragment goes anonymous.
+        let lib = [known("Yulei", [1, 0, 0], isMe: true)]
+        let spans = [
+            DiarizedSpan(start: 0, end: 5, speakerID: "short"),
+            DiarizedSpan(start: 10, end: 40, speakerID: "long"),
+        ]
+        let labels = SpeakerRecognizer.resolve(
+            outcome: DiarizationOutcome(
+                spans: spans,
+                embeddings: ["short": [1, 0, 0], "long": [1, 0.3, 0]]),  // long dist ≈ 0.04
+            knownSpeakers: lib)
+        #expect(labels["long"] == "Yulei")
+        #expect(labels["short"] == "Speaker 2")
+    }
+
     @Test("speechDuration sums per-cluster span lengths")
     func speechDurationHelper() {
         let spans = [
