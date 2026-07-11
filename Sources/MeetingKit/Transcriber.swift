@@ -71,6 +71,11 @@ public protocol Transcribing: Sendable {
     /// transcription doesn't pay for it. Idempotent and safe to call repeatedly.
     func prepare(progress: TranscribeProgressHandler?) async throws
 
+    /// Download the model files to disk WITHOUT loading/compiling them, so a
+    /// background prefetch can warm the cache while first use still pays only
+    /// the (deliberately lazy) load cost. Default no-op. Idempotent.
+    func prefetch(progress: TranscribeProgressHandler?) async throws
+
     /// Update VAD decode parallelism live, without reloading the model. Default
     /// no-op (the stub has nothing to tune).
     func setConcurrentWorkers(_ count: Int) async
@@ -114,6 +119,9 @@ extension Transcribing {
     }
 
     public func setConcurrentWorkers(_ count: Int) async {}
+
+    /// Default: nothing to download ahead of time.
+    public func prefetch(progress: TranscribeProgressHandler?) async throws {}
 }
 
 /// A no-ML placeholder so the end-to-end pipeline produces visible output before
@@ -271,34 +279,47 @@ public struct StubTranscriber: Transcribing {
             }
         }
 
-        private func buildPipeline(progress: TranscribeProgressHandler?) async throws -> WhisperKit
-        {
+        /// Download-only prefetch: fetch the model files to disk so a later load
+        /// never touches the network, but do NOT init WhisperKit — the one-time
+        /// model load/ANE compile stays lazy (see the compute-options comment in
+        /// `buildPipeline` for why loading eagerly is hazardous).
+        public func prefetch(progress: TranscribeProgressHandler?) async throws {
+            _ = try await downloadIfNeeded(progress: progress)
+        }
+
+        /// The download half of the pipeline, shared by `prefetch` and
+        /// `buildPipeline`. Returns the on-disk model folder.
+        private func downloadIfNeeded(progress: TranscribeProgressHandler?) async throws -> URL {
             // Expected on-disk folder for this model.
             let localFolder = Self.repoCacheDir.appendingPathComponent(
                 "openai_whisper-\(model.rawValue)")
-            let alreadyDownloaded = Self.isModelComplete(at: localFolder)
-
-            let folder: URL
-            if alreadyDownloaded {
+            if Self.isModelComplete(at: localFolder) {
                 // Cached from a previous run — DON'T re-download or re-verify over the
                 // network. Just load it. (This is the fix for "downloads every launch".)
-                folder = localFolder
-            } else {
-                let downloadLabel = "Downloading model (\(model.approxDownloadDescription))…"
-                let report: ProgressCallback = { p in
-                    progress?(
-                        TranscribeProgress(fraction: p.fractionCompleted, phase: downloadLabel))
-                }
-                progress?(TranscribeProgress(fraction: 0, phase: downloadLabel))
-                do {
-                    folder = try await download(report)
-                } catch {
-                    // A partial/corrupt download can't be resumed cleanly — wipe and retry.
-                    try? FileManager.default.removeItem(at: Self.repoCacheDir)
-                    progress?(TranscribeProgress(fraction: 0, phase: "Retrying download…"))
-                    folder = try await download(report)
-                }
+                return localFolder
             }
+            let downloadLabel = "Downloading model (\(model.approxDownloadDescription))…"
+            let report: ProgressCallback = { p in
+                progress?(
+                    TranscribeProgress(fraction: p.fractionCompleted, phase: downloadLabel))
+            }
+            progress?(TranscribeProgress(fraction: 0, phase: downloadLabel))
+            do {
+                return try await download(report)
+            } catch {
+                // A partial/corrupt download can't be resumed cleanly — wipe and retry.
+                try? FileManager.default.removeItem(at: Self.repoCacheDir)
+                progress?(TranscribeProgress(fraction: 0, phase: "Retrying download…"))
+                return try await download(report)
+            }
+        }
+
+        private func buildPipeline(progress: TranscribeProgressHandler?) async throws -> WhisperKit
+        {
+            let localFolder = Self.repoCacheDir.appendingPathComponent(
+                "openai_whisper-\(model.rawValue)")
+            let alreadyDownloaded = Self.isModelComplete(at: localFolder)
+            let folder = try await downloadIfNeeded(progress: progress)
 
             progress?(TranscribeProgress(fraction: nil, phase: "Loading model…"))
             // Run the encoder + decoder on the Apple Neural Engine, NOT the GPU.
@@ -412,6 +433,14 @@ public struct StubTranscriber: Transcribing {
 
         public func prepare(progress: TranscribeProgressHandler?) async throws {
             _ = try await manager(progress: progress)
+        }
+
+        /// Download-only prefetch: FluidAudio caches the fetched files on disk, so
+        /// a later `downloadAndLoad` (in `manager`) skips the network. No CoreML
+        /// model is loaded/compiled here.
+        public func prefetch(progress: TranscribeProgressHandler?) async throws {
+            progress?(TranscribeProgress(fraction: nil, phase: "Downloading Parakeet model…"))
+            _ = try await AsrModels.download(version: version)
         }
 
         private func manager(progress: TranscribeProgressHandler?) async throws -> AsrManager {

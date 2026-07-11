@@ -205,6 +205,15 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R25 — Clear permission state, never silent.** If a required permission is missing
   or denied, the app clearly says what is blocked and offers a direct path to the
   correct System Settings pane; core actions never fail silently.
+- **R25b — Proactive, quiet model prefetch.** Once the mandatory permissions
+  (Microphone, Screen & System Audio, Calendar) are all granted, the app
+  downloads the transcription models it will need in the background —
+  non-blocking, reusing the existing quiet progress line — so the first
+  meeting's transcript never pays a surprise download. Nothing downloads before
+  those permissions are granted. Loading/compiling a model still happens lazily
+  at first use; the prefetch only pulls the files onto disk ahead of time. A
+  prefetch failure is silent and falls back to the existing
+  download-on-first-use path — it never blocks recording or transcription.
 
 ### Interface (elegant, native macOS Dock app)
 - **R11 — Elegant, easy-to-use, native.** The GUI is a refined, native-macOS Dock
@@ -290,7 +299,9 @@ Silicon. It only transcribes — summarization was intentionally removed.
   reasonable multiple of the meeting length on supported Apple Silicon. The detail
   pane shows a smoothed "~N min left" estimate next to the progress bar during
   transcription (it appears once progress is stable, and is omitted for the
-  near-instant Parakeet path).
+  near-instant Parakeet path). Model downloads are front-loaded rather than
+  deferred to first use where possible (R25b), so the surprise-delay case is
+  minimized.
 - **N11 — Manageable storage.** Recordings (audio + transcripts) must not grow
   unbounded without the user's awareness; the user can see and reclaim space, and
   long-term retention is manageable. The heavy artifact (audio) carries a short
