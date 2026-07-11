@@ -1,5 +1,5 @@
-import SwiftUI
 import MeetingKit
+import SwiftUI
 
 /// First-run guidance. Shown in the main window until the required permissions
 /// are granted, so a new user is walked from install → ready without ever having
@@ -15,22 +15,24 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
 
-                VStack(spacing: 0) {
-                    ForEach(SetupCapability.allCases, id: \.self) { capability in
-                        capabilityRow(capability)
-                        if capability != SetupCapability.allCases.last { Divider() }
+                GroupBox {
+                    VStack(spacing: 0) {
+                        ForEach(SetupCapability.allCases, id: \.self) { capability in
+                            capabilityRow(capability)
+                            if capability != SetupCapability.allCases.last { Divider() }
+                        }
                     }
                 }
-                .padding(.vertical, 4)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
 
                 voiceEnrollment
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Auto-recording works when you join from the Zoom, Teams, or Google Meet app.",
-                          systemImage: "info.circle")
-                    Label("Everything runs on your Mac. Your audio and transcripts never leave this computer.",
-                          systemImage: "lock.fill")
+                    Label(
+                        "Auto-recording works when you join from the Zoom, Teams, or Google Meet app.",
+                        systemImage: "info.circle")
+                    Label(
+                        "Everything runs on your Mac. Your audio and transcripts never leave this computer.",
+                        systemImage: "lock.fill")
                 }
                 .font(.caption).foregroundStyle(.secondary)
 
@@ -40,8 +42,10 @@ struct OnboardingView: View {
                 // take effect after a relaunch — give the user a one-click way to do
                 // it instead of telling them to quit and reopen manually.
                 HStack(spacing: 12) {
-                    Text("Turned on a permission that's still not taking effect? Some need a restart.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        "Turned on a permission that's still not taking effect? Some need a restart."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Restart App") { state.relaunch() }
                         .buttonStyle(.bordered)
@@ -69,12 +73,22 @@ struct OnboardingView: View {
     // but the app transcribes fine without it, so it's presented as its own card
     // (not a checklist row that could read as "blocking").
     private var voiceEnrollment: some View {
+        GroupBox {
+            voiceEnrollmentContent
+                .padding(Theme.Space.xs)
+        }
+    }
+
+    private var voiceEnrollmentContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: state.settings.isEnrolled ? "checkmark.circle.fill" : "person.wave.2")
-                    .font(.title3)
-                    .foregroundStyle(state.settings.isEnrolled ? .green : .secondary)
-                    .padding(.top, 2)
+                Image(
+                    systemName: state.settings.isEnrolled
+                        ? "checkmark.circle.fill" : "person.wave.2"
+                )
+                .font(.title3)
+                .foregroundStyle(state.settings.isEnrolled ? .green : .secondary)
+                .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -84,8 +98,10 @@ struct OnboardingView: View {
                             .padding(.horizontal, 6).padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
                     }
-                    Text("Teach the app your voice so it can label you as \u{201C}Me\u{201D} when several people share a room.")
-                        .font(.callout).foregroundStyle(.secondary)
+                    Text(
+                        "Teach the app your voice so it can label you as \u{201C}Me\u{201D} when several people share a room."
+                    )
+                    .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -137,8 +153,6 @@ struct OnboardingView: View {
                 }
             }
         }
-        .padding(16)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func startEnrollment() {

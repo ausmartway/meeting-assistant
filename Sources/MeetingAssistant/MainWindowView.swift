@@ -42,11 +42,11 @@ struct MainWindowView: View {
                 .safeAreaInset(edge: .bottom) {
                     SettingsLink {
                         HStack(spacing: 4) {
-                            Image(systemName: "internaldrive").font(.system(size: 10))
+                            Image(systemName: "internaldrive").font(.caption2)
                             Text(
                                 "\(ByteCountFormatter.string(fromByteCount: state.storageBytes, countStyle: .file)) used"
                             )
-                            .font(.system(size: 10))
+                            .font(.caption2)
                         }
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,7 +116,7 @@ struct MainWindowView: View {
             Section {
                 if results.isEmpty && !searchText.isEmpty {
                     Text("No meetings match \u{201C}\(searchText)\u{201D}")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(.secondary)
                 }
                 ForEach(results, id: \.meeting.id) { rec in
                     meetingRow(rec)
@@ -204,15 +204,15 @@ struct MainWindowView: View {
             localUserName: state.settings.localUserName)
         return HStack(spacing: Theme.Space.s) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Text(title).font(.body.weight(.medium)).lineLimit(1)
                 Text(rec.recordedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             if count > 0 {
                 HStack(spacing: 2) {
-                    Image(systemName: "person.2").font(.system(size: 10))
-                    Text("\(count)").font(.system(size: 11, weight: .medium))
+                    Image(systemName: "person.2").font(.caption2)
+                    Text("\(count)").font(.caption.weight(.medium))
                 }
                 .foregroundStyle(.secondary)
                 .help("\(count) \(count == 1 ? "speaker" : "speakers")")
@@ -225,8 +225,8 @@ struct MainWindowView: View {
         HStack(spacing: Theme.Space.s) {
             PulsingDot()
             VStack(alignment: .leading, spacing: 2) {
-                Text(meeting.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text("Recording").font(.system(size: 11)).foregroundStyle(Theme.accent)
+                Text(meeting.title).font(.body.weight(.semibold)).lineLimit(1)
+                Text("Recording").font(.caption).foregroundStyle(Theme.accent)
             }
             Spacer()
         }
@@ -324,21 +324,31 @@ struct MainWindowView: View {
 
     // MARK: Overlays
 
+    // A transient, native-feeling banner: system material surface, red warning
+    // glyph, primary text — not a saturated colored card (HIG: use color
+    // sparingly; let the symbol carry the severity).
     @ViewBuilder private var errorBanner: some View {
         if let error = state.lastError {
             HStack(alignment: .top, spacing: Theme.Space.s) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.white)
-                Text(error).font(.callout).foregroundStyle(.white).multilineTextAlignment(.leading)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                Text(error).font(.callout).multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
                 Button {
                     state.dismissError()
                 } label: {
-                    Image(systemName: "xmark").foregroundStyle(.white.opacity(0.85))
+                    Image(systemName: "xmark").foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
+                    .help("Dismiss")
             }
             .padding(Theme.Space.m)
-            .background(.red.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.18), radius: 12, y: 3)
+            .background(
+                .regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.quaternary)
+            )
+            .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
             .frame(maxWidth: 440).padding()
             .task(id: error) {
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
@@ -404,24 +414,42 @@ private struct MeetingDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @FocusState private var titleFocused: Bool
+    /// The Speakers inspector is shown by default (R16b: visible, not hidden);
+    /// the toolbar toggle is the standard way to reclaim reading width.
+    @State private var showSpeakers = true
 
     var body: some View {
+        let hasSpeakers = !state.meetingSpeakers(for: recording).isEmpty
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
             if state.processing.current?.id == recording.meeting.id { progressRow }
-            // Reading column on the left; a fixed details inspector (Speakers) on the
-            // right, so a wide window's space is used instead of left as empty gutters.
-            HStack(alignment: .top, spacing: 0) {
-                TranscriptReadingView(
-                    document: state.transcript(for: recording),
-                    localUserName: state.settings.localUserName
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                if !state.meetingSpeakers(for: recording).isEmpty {
-                    Divider()
-                    detailsInspector
-                        .frame(width: 280)
+            TranscriptReadingView(
+                document: state.transcript(for: recording),
+                localUserName: state.settings.localUserName
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        // The Speakers editor lives in a system inspector pane, so it gets the
+        // native trailing placement, material, and resize behavior.
+        .inspector(
+            isPresented: Binding(
+                get: { showSpeakers && hasSpeakers },
+                set: { showSpeakers = $0 }
+            )
+        ) {
+            detailsInspector
+                .inspectorColumnWidth(min: 240, ideal: 280, max: 340)
+        }
+        .toolbar {
+            if hasSpeakers {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showSpeakers.toggle()
+                    } label: {
+                        Label("Speakers", systemImage: "sidebar.right")
+                    }
+                    .help(showSpeakers ? "Hide the Speakers panel" : "Show the Speakers panel")
                 }
             }
         }
@@ -579,9 +607,8 @@ private struct MeetingDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Trailing details panel: the Speakers editor (and room for future meeting
-    /// details). Fills the right side of wide windows so the reading column can stay
-    /// a comfortable measure without leaving the rest of the pane empty.
+    /// Inspector content: the Speakers editor (and room for future meeting
+    /// details). The system inspector supplies its own material background.
     private var detailsInspector: some View {
         let speakers = state.meetingSpeakers(for: recording)
         return ScrollView {
@@ -601,7 +628,6 @@ private struct MeetingDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.m)
         }
-        .background(.quaternary.opacity(0.18))
     }
 
     private func copyToClipboard(_ text: String) {
@@ -646,9 +672,10 @@ private struct TranscriptReadingView: View {
                     transcriptFooter(parsed)
                 }
             }
-            // Fill the available width between the sidebar and the details inspector
-            // (no measure cap), left-aligned.
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // A comfortable reading measure (~85 characters of serif body),
+            // centered in whatever width the sidebar and inspector leave free.
+            .frame(maxWidth: 660, alignment: .leading)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.l)
         }
@@ -692,12 +719,12 @@ private struct TurnView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Text(turn.speaker)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(
                         Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
                 if !turn.time.isEmpty {
                     Text(turn.time)
-                        .font(.system(size: 11).monospacedDigit())
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
