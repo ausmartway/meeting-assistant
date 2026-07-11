@@ -1,6 +1,6 @@
 cask "meeting-assistant" do
-  version "0.4.16"
-  sha256 "fe33c7ef94a015eaa3886bc328eb72366509a06b400e2a0fdda89c5675d79bc6"
+  version "0.4.21"
+  sha256 "acc1a9d257afc660551a2594e1cac8191038a923c8ecd41d7142b1844e25e838"
 
   url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg",
       verified: "github.com/ausmartway/meeting-assistant/"
@@ -8,9 +8,10 @@ cask "meeting-assistant" do
   desc "Menu-bar app that auto-captures and locally transcribes meetings"
   homepage "https://github.com/ausmartway/meeting-assistant"
 
-  # macOS 14 (Sonoma) is the floor: EventKit full-access, ScreenCaptureKit audio,
-  # and the Vision OCR APIs the app relies on.
-  depends_on macos: :sonoma
+  # macOS 26 (Tahoe) is the floor — the app targets current-OS Macs only.
+  # (Symbol form: Homebrew's OSDependsOn style rule rejects ">= :tahoe" while
+  # Tahoe is the newest macOS; a bare symbol already means "this or newer".)
+  depends_on macos: :tahoe
 
   app "Meeting Assistant.app"
 
@@ -29,8 +30,7 @@ cask "meeting-assistant" do
     Meeting Assistant is not notarized by Apple, so macOS blocks its first launch.
     Allow it once (first launch only):
 
-      • macOS 15 / 26: System Settings → Privacy & Security → "Open Anyway".
-      • macOS 14:      right-click the app in Applications → Open → Open.
+      System Settings → Privacy & Security → "Open Anyway".
 
     To skip that step, install without the Gatekeeper quarantine flag:
 

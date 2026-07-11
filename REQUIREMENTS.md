@@ -15,7 +15,7 @@ organized*.
 ## 1. What the app is
 
 A native **macOS menu-bar + Dock app** (Swift + SwiftUI, deployment target
-**macOS 14**) that watches the calendar, prompts to capture Zoom/Meet/Teams/Webex
+**macOS 26**) that watches the calendar, prompts to capture Zoom/Meet/Teams/Webex
 meetings, and produces a **speaker-labeled transcript**, transcribed **locally** on Apple
 Silicon. It only transcribes — summarization was intentionally removed.
 
@@ -50,7 +50,9 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R3b — Stop transcription.** The user can stop the in-flight transcript from the
   menu bar or the main window. Stopping is silent (no notification), leaves any
   queued meetings transcribing, and keeps the stopped meeting re-transcribable
-  ("Make Transcript Again") — nothing partial is written.
+  ("Transcript Again") — nothing partial is written. "Transcript Again" is
+  disabled while that meeting is already transcribing or queued, so the same
+  meeting can't be enqueued twice.
 - **R3c — Meeting names.** A recording is named after its **calendar invite subject**
   whenever one applies — including when "Record a meeting now" is pressed *during* a
   calendar meeting that is in progress. Otherwise it is a generic **"ad-hoc meeting"**.
@@ -182,16 +184,23 @@ Silicon. It only transcribes — summarization was intentionally removed.
   out-of-the-box without setup but power users can tune or disable it. A retention
   sweep runs at launch and daily, skipping any meeting that is recording or
   transcribing. After a recording's audio is reclaimed, its transcript stays readable
-  in history; only "Make Transcript Again" (which needs the audio) becomes
+  in history; only "Transcript Again" (which needs the audio) becomes
   unavailable, and the UI says so ("Audio cleared to save space") rather than failing
   silently. **Recognized speakers' voiceprints are never removed** — they live in the
   global speaker library outside any meeting folder, so cross-meeting recognition (R9)
   survives expiry. Manual delete (R20) still removes everything immediately.
+- **R27 — Verify a speaker by ear.** Hovering a transcript line reveals a play
+  button that plays that line's audio, so the user can check who is really
+  speaking before renaming (R8/R9). Meetings transcribed from now on store
+  exact per-line clip boundaries (`segments.json`); older recordings play a
+  best-effort window derived from the line's timestamp (and may guess the wrong
+  channel for in-room named speakers) until re-transcribed. The control is
+  absent once retention has expired the audio (R22), like "Transcript Again".
 
 ### Setup & permissions
 - **R24 — Guided first run.** On first launch the app walks the user, in plain
-  language, through approving the app (the one-time Gatekeeper "Open Anyway" on
-  macOS 15+), granting the permissions it needs (Microphone, Screen & System Audio,
+  language, through approving the app (the one-time Gatekeeper "Open
+  Anyway"), granting the permissions it needs (Microphone, Screen & System Audio,
   Calendar, Notifications, Accessibility), and enrolling their voice.
 - **R25 — Clear permission state, never silent.** If a required permission is missing
   or denied, the app clearly says what is blocked and offers a direct path to the
@@ -220,7 +229,7 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **R16 — Dock app.** Ships as a Dock-first app (Dock icon on by default) while
   keeping the menu-bar item as a lightweight status + quick-record companion.
 - **R16b — Actions are visible buttons, not menus.** Actions a user performs on a
-  selected recording (Copy, Export/Save, Reveal, Make Transcript Again, Delete,
+  selected recording (Copy, Export/Save, Reveal, Transcript Again, Delete,
   rename, etc.) are exposed as **clearly labeled buttons in the right-hand detail
   pane**, not tucked into context menus, menu-bar submenus, or right-click menus.
   Buttons are discoverable and lower-effort for end-users; hidden menus are not.
@@ -267,8 +276,9 @@ Silicon. It only transcribes — summarization was intentionally removed.
 - **N6 — Permissions persist across updates.** Code signing uses a stable identity
   so macOS keeps TCC grants (Screen Recording, Accessibility, Mic) across rebuilds
   and updates.
-- **N7 — Platform.** macOS 14+ (Sonoma) floor; Apple Silicon; not sandboxed (needed
-  for ScreenCaptureKit system audio in a self-distributed build).
+- **N7 — Platform.** macOS 26+ (Tahoe) floor; Apple Silicon; not sandboxed (needed
+  for ScreenCaptureKit system audio in a self-distributed build). Earlier macOS
+  versions are deliberately unsupported — the owner targets current-OS Macs only.
 - **N8 — Verified by running.** Pure logic is unit-tested (TDD); framework/UI
   integrations are verified by building and running the real app (and, for UI,
   visually checked). Ship only what's verified.

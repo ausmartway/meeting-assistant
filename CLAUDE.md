@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 14**) that
+A native macOS menu-bar app (Swift + SwiftUI, deployment target **macOS 26**) that
 watches the calendar, prompts to capture Zoom/Meet/Teams/Webex meetings, and produces a
 speaker-labeled transcript — transcribed locally on Apple Silicon. (Summarization
 was intentionally removed; this app only transcribes.)
@@ -137,11 +137,10 @@ testable; follow TDD for it.
 ## Distribution / signing
 
 There is no Apple Developer ID cert on this machine, so builds are not notarized.
-Gatekeeper blocks the first launch — on **macOS 15/26** the user must approve it
-via **System Settings → Privacy & Security → Open Anyway** (the old right-click →
-Open button was removed in macOS 15; it still works on **macOS 14**). A
-clean-opening, distributable DMG would need an Apple Developer ID + notarization
-(notarytool is installed; the account is not).
+Gatekeeper blocks the first launch — the user must approve it via
+**System Settings → Privacy & Security → Open Anyway**. A clean-opening,
+distributable DMG would need an Apple Developer ID + notarization (notarytool is
+installed; the account is not).
 
 **Signing identity (important for TCC).** macOS anchors TCC grants (Screen
 Recording, Accessibility) to the code-signing identity. *Ad-hoc* signing has no

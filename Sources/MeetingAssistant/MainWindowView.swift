@@ -417,6 +417,7 @@ private struct MeetingDetailView: View {
     /// The Speakers inspector is shown by default (R16b: visible, not hidden);
     /// the toolbar toggle is the standard way to reclaim reading width.
     @State private var showSpeakers = true
+    @StateObject private var clipPlayer = ClipPlayer()
 
     var body: some View {
         let hasSpeakers = !state.meetingSpeakers(for: recording).isEmpty
@@ -426,7 +427,8 @@ private struct MeetingDetailView: View {
             if state.processing.current?.id == recording.meeting.id { progressRow }
             TranscriptReadingView(
                 document: state.transcript(for: recording),
-                localUserName: state.settings.localUserName
+                localUserName: state.settings.localUserName,
+                playback: playbackContext
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -453,6 +455,24 @@ private struct MeetingDetailView: View {
                 }
             }
         }
+        .onDisappear { clipPlayer.stop() }
+        .onChange(of: recording.meeting.id) { _, _ in clipPlayer.stop() }
+    }
+
+    /// Everything the reading view needs to play a line, or nil when the audio
+    /// is gone (retention) — the play buttons don't render at all then.
+    private var playbackContext: TranscriptReadingView.Playback? {
+        guard state.hasAudio(for: recording),
+            let dir = state.audioDirectory(for: recording)
+        else { return nil }
+        return TranscriptReadingView.Playback(
+            segments: state.savedSegments(for: recording),
+            recordedAt: recording.recordedAt,
+            audioDirectory: dir,
+            micFileName: recording.micAudioFile,
+            systemFileName: recording.systemAudioFile,
+            player: clipPlayer
+        )
     }
 
     private var header: some View {
@@ -557,13 +577,13 @@ private struct MeetingDetailView: View {
             Button {
                 Task { await state.reprocess(recording) }
             } label: {
-                Label("Make Again", systemImage: "arrow.clockwise")
+                Label("Transcript Again", systemImage: "arrow.clockwise")
             }
-            .disabled(!state.modelReady || !state.hasAudio(for: recording))
-            .help(
-                state.hasAudio(for: recording)
-                    ? "Make the transcript again"
-                    : "Audio was cleared to save space — re-transcribing isn't available.")
+            .disabled(
+                !state.modelReady || !state.hasAudio(for: recording)
+                    || state.processing.contains(recording.meeting.id)
+            )
+            .help(transcriptAgainHelp)
 
             // Separate the destructive action from the safe ones.
             Divider().frame(height: 16)
@@ -577,6 +597,17 @@ private struct MeetingDetailView: View {
         }
         .buttonStyle(.bordered)
         .labelStyle(.titleAndIcon)
+    }
+
+    /// Tooltip for "Transcript Again", explaining why it's unavailable when it is.
+    private var transcriptAgainHelp: String {
+        if state.processing.contains(recording.meeting.id) {
+            return "This meeting is already being transcribed."
+        }
+        if !state.hasAudio(for: recording) {
+            return "Audio was cleared to save space — re-transcribing isn't available."
+        }
+        return "Make the transcript again"
     }
 
     private var progressRow: some View {
@@ -650,9 +681,28 @@ private struct MeetingDetailView: View {
 private struct TranscriptReadingView: View {
     let document: String?
     let localUserName: String
+    var playback: Playback? = nil
+
+    /// Context needed to play the exact audio behind a transcript line
+    /// (speaker verification, R27). Nil when there's no audio to play from.
+    struct Playback {
+        let segments: [LabeledSegment]?
+        let recordedAt: Date
+        let audioDirectory: URL
+        let micFileName: String
+        let systemFileName: String
+        let player: ClipPlayer
+    }
 
     var body: some View {
         let parsed = TranscriptParser.parse(document ?? "")
+        let clips: [TranscriptAudioLocator.ClipLocation?] =
+            playback.map { p in
+                TranscriptAudioLocator.locate(
+                    turns: parsed.turns, segments: p.segments, recordedAt: p.recordedAt,
+                    localUserName: localUserName, micFileName: p.micFileName,
+                    systemFileName: p.systemFileName)
+            } ?? Array(repeating: nil, count: parsed.turns.count)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if parsed.turns.isEmpty {
@@ -665,9 +715,12 @@ private struct TranscriptReadingView: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .padding(.bottom, Theme.Space.m)
                     }
-                    ForEach(Array(parsed.turns.enumerated()), id: \.offset) { _, turn in
-                        TurnView(turn: turn, localUserName: localUserName)
-                            .padding(.bottom, Theme.Space.m)
+                    ForEach(Array(parsed.turns.enumerated()), id: \.offset) { index, turn in
+                        TurnView(
+                            turn: turn, localUserName: localUserName, index: index,
+                            clip: clips[index], playback: playback
+                        )
+                        .padding(.bottom, Theme.Space.m)
                     }
                     transcriptFooter(parsed)
                 }
@@ -711,30 +764,99 @@ private struct TranscriptReadingView: View {
 }
 
 /// One speaker turn: a colored name + quiet timestamp header, serif speech beneath.
+/// When `playback` is provided and a clip was located for this turn, hovering the
+/// row reveals a play button (speaker verification, R27); `@ObservedObject player`
+/// re-renders the row whenever `playingTurnID` changes so exactly one row is ever
+/// highlighted/playing.
 private struct TurnView: View {
     let turn: TranscriptParser.Turn
     let localUserName: String
+    var index: Int = 0
+    var clip: TranscriptAudioLocator.ClipLocation? = nil
+    var playback: TranscriptReadingView.Playback? = nil
+    /// `ObservedObject` requires a non-optional `ObservableObject`, so rows with
+    /// no playback context observe a throwaway, never-played `ClipPlayer` — this
+    /// is what makes the row re-render whenever the real player's
+    /// `playingTurnID` changes.
+    @ObservedObject private var player: ClipPlayer
+
+    init(
+        turn: TranscriptParser.Turn, localUserName: String, index: Int = 0,
+        clip: TranscriptAudioLocator.ClipLocation? = nil,
+        playback: TranscriptReadingView.Playback? = nil
+    ) {
+        self.turn = turn
+        self.localUserName = localUserName
+        self.index = index
+        self.clip = clip
+        self.playback = playback
+        _player = ObservedObject(wrappedValue: playback?.player ?? ClipPlayer())
+    }
+
+    @State private var hoveredTurn = false
+
+    private var isPlaying: Bool { player.playingTurnID == index }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                Text(turn.speaker)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(
-                        Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
-                if !turn.time.isEmpty {
-                    Text(turn.time)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+            playControl
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+                    Text(turn.speaker)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(
+                            Theme.speakerColor(for: turn.speaker, localUserName: localUserName))
+                    if !turn.time.isEmpty {
+                        Text(turn.time)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Text(turn.text)
+                    .font(Theme.reading)
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(turn.text)
-                .font(Theme.reading)
-                .lineSpacing(6)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isPlaying ? Theme.accent.opacity(0.08) : Color.clear)
+        // The hover region must be the row's full rectangle: without an explicit
+        // contentShape, only *visible* content is hover-tracked, so the pointer
+        // "fell out" of the row while crossing the gutter toward the play button
+        // and the button vanished before it could be reached.
+        .contentShape(Rectangle())
+        .onHover { hovering in hoveredTurn = hovering }
+    }
+
+    /// Hover play/stop for one turn. Only rendered when a clip exists.
+    /// The label carries a generous frame + contentShape so the whole gutter
+    /// area is clickable — a bare 12 px glyph with `.plain` style is nearly
+    /// impossible to hit (real bug: clicks never reached the handler). It also
+    /// stays faintly visible instead of opacity-0 (zero-opacity views aren't
+    /// hit-testable, and a visible affordance is discoverable).
+    @ViewBuilder
+    private var playControl: some View {
+        if let clip, let playback {
+            Button {
+                if isPlaying {
+                    playback.player.stop()
+                } else {
+                    playback.player.play(
+                        url: playback.audioDirectory.appendingPathComponent(clip.fileName),
+                        from: clip.start, to: clip.end, turnID: index)
+                }
+            } label: {
+                Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle")
+                    .font(.system(size: 14))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isPlaying ? Theme.accent : .secondary)
+            .help(isPlaying ? "Stop" : "Play this line")
+            .opacity(isPlaying || hoveredTurn ? 1 : 0.3)
+        }
     }
 }
 

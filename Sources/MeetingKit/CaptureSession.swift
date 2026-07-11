@@ -14,7 +14,6 @@ import os
 ///
 /// Transcription and speaker labeling happen afterwards from the files this
 /// writes, keeping the machine responsive while the user is on the call.
-@available(macOS 14.0, *)
 public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// How often to sample a video frame for active-speaker detection.

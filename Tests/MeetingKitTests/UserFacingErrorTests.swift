@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import MeetingKit
 
 @Suite("UserFacingError")
@@ -33,7 +34,7 @@ struct UserFacingErrorTests {
             let msg = userFacingMessage(for: op)
             #expect(msg.lowercased().contains("saved"))
             // References the exact button label users see in the meeting detail view.
-            #expect(msg.contains("Make Transcript Again"))
+            #expect(msg.contains("“Transcript Again.”"))
         }
     }
 

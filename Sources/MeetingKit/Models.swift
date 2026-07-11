@@ -164,12 +164,19 @@ public struct LabeledSegment: Codable, Sendable, Equatable {
     public let end: TimeInterval
     public let text: String
     public let speaker: String  // "Me", an OCR'd name, or "Speaker N"
+    /// Which audio file this segment came from — lets the UI play the exact
+    /// clip back (`segments.json`). Nil for segments saved before this existed.
+    public let channel: AudioChannel?
 
-    public init(start: TimeInterval, end: TimeInterval, text: String, speaker: String) {
+    public init(
+        start: TimeInterval, end: TimeInterval, text: String, speaker: String,
+        channel: AudioChannel? = nil
+    ) {
         self.start = start
         self.end = end
         self.text = text
         self.speaker = speaker
+        self.channel = channel
     }
 }
 

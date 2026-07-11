@@ -22,11 +22,9 @@ env:
 
 jobs:
   build:
-    # macos-15 ships Xcode 16 (macOS 15 SDK). WhisperKit needs it: it references
-    # CoreML's MLState (macOS 15 SDK) and Swift 6's @retroactive, which the older
-    # Xcode on macos-14 lacks. Deployment target stays macOS 14 — building against
-    # a newer SDK is fine.
-    runs-on: macos-15
+    # The app targets macOS 26+, so the build needs the macOS 26 SDK (Xcode 26) —
+    # only the macos-26 image ships it.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
 
@@ -134,11 +132,11 @@ jobs:
           1. Download \`MeetingAssistant.dmg\` below and open it.
           2. Drag **Meeting Assistant** onto **Applications**.
           3. Double-click the app. This build is self-distributed (not notarized),
-             so macOS blocks the first launch. To allow it (first time only):
-             - **macOS 15 / 26:** open **System Settings → Privacy & Security**,
-               scroll to **Security**, click **Open Anyway**, authenticate, then
-               **Open Anyway** again. (Apple removed the right-click → Open button.)
-             - **macOS 14:** **right-click the app → Open**, then click **Open**.
+             so macOS blocks the first launch. To allow it (first time only), open
+             **System Settings → Privacy & Security**, scroll to **Security**,
+             click **Open Anyway**, authenticate, then **Open Anyway** again.
+
+          Requires **macOS 26 (Tahoe)** or later on Apple Silicon.
 
           The app lives in your menu bar and walks you through setup on first launch."
 
