@@ -65,12 +65,12 @@ struct MeetingDisplayTitleTests {
         #expect(
             MeetingDisplayTitle.sidebarTitle(
                 title: "ad-hoc Teams", providerDisplayName: "Microsoft Teams",
-                providerShortName: "Teams", speakers: ["Larry"], localUserName: "Me")
-                == "ad-hoc Teams · Larry")
+                providerShortName: "Teams", speakers: ["Robin"], localUserName: "Me")
+                == "ad-hoc Teams · Robin")
         #expect(
             MeetingDisplayTitle.sidebarTitle(
                 title: "Untitled meeting", providerDisplayName: nil, providerShortName: nil,
-                speakers: ["Larry"], localUserName: "Me")
-                == "Untitled meeting · Larry")
+                speakers: ["Robin"], localUserName: "Me")
+                == "Untitled meeting · Robin")
     }
 }

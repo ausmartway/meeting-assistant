@@ -191,7 +191,7 @@ git commit -m "feat: SpeakerLibrary.setLocalUserName to name/migrate the local u
         let (store, _) = try makeStore()
         let dir = try seed(store, id: "m", recordedAt: Date())
         try store.saveSpeakerMap(
-            MeetingSpeakerMap(labelByCluster: ["S1": "Larry Song"], embeddingByCluster: ["S1": [1]]),
+            MeetingSpeakerMap(labelByCluster: ["S1": "Jane Doe"], embeddingByCluster: ["S1": [1]]),
             for: "m")
         #expect(store.speakerMap(for: "m") != nil)
         store.deleteSpeakerMap(for: "m")
@@ -286,7 +286,7 @@ it lacks one, build a store + recording inline like the cancellation suite does.
         FileManager.default.createFile(atPath: dir.appendingPathComponent("sys.wav").path, contents: Data())
         // A stale map from a "previous" transcription.
         try store.saveSpeakerMap(
-            MeetingSpeakerMap(labelByCluster: ["S1": "Larry Song"], embeddingByCluster: ["S1": [1]]),
+            MeetingSpeakerMap(labelByCluster: ["S1": "Jane Doe"], embeddingByCluster: ["S1": [1]]),
             for: meeting.id)
 
         let processor = MeetingProcessor(

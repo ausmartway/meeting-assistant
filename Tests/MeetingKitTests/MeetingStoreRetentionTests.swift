@@ -132,7 +132,7 @@ import Testing
         let dir = try seed(store, id: "m", recordedAt: Date())
         try store.saveSpeakerMap(
             MeetingSpeakerMap(
-                labelByCluster: ["S1": "Larry Song"], embeddingByCluster: ["S1": [1]]),
+                labelByCluster: ["S1": "Jane Doe"], embeddingByCluster: ["S1": [1]]),
             for: "m")
         #expect(store.speakerMap(for: "m") != nil)
         store.deleteSpeakerMap(for: "m")

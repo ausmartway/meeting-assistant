@@ -111,8 +111,12 @@ public final class MeetingProcessor {
                     audioFile: systemURL, progress: onProgress)
                 try Task.checkCancellation()
                 let micAnon = micLabels.values.filter { $0.hasPrefix("Speaker ") }.count
+                // shortMeThreshold nil: the Me-rescue for short clusters is a
+                // mic-channel affordance; a short remote cluster must never be
+                // folded into "Me".
                 systemLabels = SpeakerRecognizer.resolve(
                     outcome: systemOutcome, knownSpeakers: knownSpeakers,
+                    shortMeThreshold: nil,
                     startingAnon: 2 + micAnon)
             } catch is CancellationError {
                 throw CancellationError()
