@@ -31,6 +31,20 @@ public actor AutoRoutingTranscriber: Transcribing {
         }
     }
 
+    /// Background download of everything the router might need, cheapest-first:
+    /// the detector is prepared fully (small, always needed to route at all),
+    /// then Parakeet (covers the common English path), then the big Whisper
+    /// model — downloads only, so the multi-minute model compile stays lazy.
+    /// Sequential on purpose: kinder to bandwidth, and fail-fast is fine because
+    /// the lazy download-on-first-use path covers whatever is still missing.
+    public func prefetch(progress: TranscribeProgressHandler?) async throws {
+        if let preparable = detector as? Transcribing {
+            try await preparable.prepare(progress: progress)
+        }
+        try await parakeet.prefetch(progress: progress)
+        try await whisper.prefetch(progress: progress)
+    }
+
     public func setConcurrentWorkers(_ count: Int) async {
         await whisper.setConcurrentWorkers(count)
     }

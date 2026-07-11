@@ -105,6 +105,8 @@ final class AppState: ObservableObject {
     /// meeting; queued items are untouched.
     private var currentItemTask: Task<Void, Never>?
     private var pollTimer: Timer?
+    /// One-shot latch for the background model prefetch (per app session).
+    private var modelPrefetchStarted = false
     private var notifiedMeetingIDs: Set<String> = []
     /// Registers the actionable notification + handles the user tapping "Start
     /// Recording" on a detected meeting.
@@ -177,6 +179,7 @@ final class AppState: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     await self?.permissions.refresh()
+                    self?.startModelPrefetchIfReady()
                     self?.refreshUpcoming()
                 }
             }
@@ -210,6 +213,9 @@ final class AppState: ObservableObject {
         case .accessibility: permissions.requestAccessibility()
         case .notifications: await permissions.requestNotifications()
         }
+        // Granting the last mandatory permission starts the model prefetch live,
+        // while the user is still in onboarding.
+        startModelPrefetchIfReady()
     }
 
     // MARK: - Lifecycle
@@ -221,9 +227,51 @@ final class AppState: ObservableObject {
         refreshUpcoming()
         notificationCoordinator.appState = self
         notificationCoordinator.register()
-        Task { await prepareModel() }
+        // Model downloads are gated on the mandatory permissions (spec:
+        // docs/superpowers/specs/2026-07-11-model-prefetch-design.md). Refresh
+        // first so already-set-up users start downloading right at launch.
+        Task {
+            await permissions.refresh()
+            startModelPrefetchIfReady()
+        }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+    }
+
+    /// One-time background model prefetch, started the moment all mandatory
+    /// permissions (Screen Recording, Microphone, Calendar) are granted: prepare
+    /// the transcriber (for `.auto` that is just the small language detector),
+    /// then download — never load — the heavy models so the first transcription
+    /// skips the network. Non-blocking: processing waits only on `modelReady`
+    /// (set by `prepareModel`), and a prefetch failure is quiet because the lazy
+    /// download-on-first-use path in the engines remains the fallback.
+    func startModelPrefetchIfReady() {
+        guard
+            ModelPrefetchPolicy.shouldStart(
+                screenRecording: permissions.screenRecording.setupStatus,
+                microphone: permissions.microphone.setupStatus,
+                calendar: permissions.calendar.setupStatus,
+                alreadyStarted: modelPrefetchStarted)
+        else { return }
+        modelPrefetchStarted = true
+        Task {
+            await prepareModel()
+            guard modelReady else { return }  // prepare failed; its retry UI takes over
+            let handler: TranscribeProgressHandler = { [weak self] p in
+                Task { @MainActor in
+                    self?.modelDownloadFraction = p.fraction
+                    self?.modelStatusText = p.phase
+                }
+            }
+            do {
+                try await transcriber.prefetch(progress: handler)
+                modelStatusText = "Models ready"
+            } catch {
+                // Quiet by design: whatever is missing downloads at first use.
+                modelStatusText = "Model download failed — will retry when needed"
+            }
+            modelDownloadFraction = nil
         }
     }
 
@@ -262,6 +310,15 @@ final class AppState: ObservableObject {
     }
 
     private func tick() {
+        // Pick up mandatory grants made outside the app (System Settings) even if
+        // the app never re-activates; cheap, and the latch stops re-checking once
+        // the prefetch has started.
+        if !modelPrefetchStarted {
+            Task {
+                await permissions.refresh()
+                startModelPrefetchIfReady()
+            }
+        }
         refreshUpcoming()
         // We never start recording on our own anymore — detection only prompts.
         // Skip prompting while a capture is already running.
