@@ -96,7 +96,12 @@ captured; a shared video keeps moving and is skipped. Keyframes land in the bund
 `TranscriptAudioLocator` matches turns positionally against `segments.json` and extra
 entries would silently break per-line playback.
 
-**All slide work must stay off `CaptureSession.outputQueue.`** That queue is serial and
+Slide timestamps and turn timestamps come from different clocks: a slide's offset is
+wall-clock elapsed time since capture started, while a turn's offset comes from its
+position inside the audio files. This is the same skew `SpeakerTimeline` already
+carries and `SpeakerFuser` tolerates, but don't assume the two line up exactly.
+
+**All slide work must stay off `CaptureSession.outputQueue`.** That queue is serial and
 serves *both* the system-audio and screen-frame outputs, so CoreImage/file work in the
 handler back-pressures audio delivery; ScreenCaptureKit then sheds samples, and since
 `system.wav` is written by appending buffers with no timestamps, shed samples silently
