@@ -180,6 +180,18 @@ public struct LabeledSegment: Codable, Sendable, Equatable {
     }
 }
 
+/// One saved picture of a shared screen, produced during capture by `SlideRecorder`
+/// whenever the presented content materially changed.
+public struct SlideKeyframe: Codable, Sendable, Equatable {
+    public let timestamp: TimeInterval  // seconds from meeting start
+    public let file: String  // bundle-relative path, e.g. "slides/slide-0391.jpg"
+
+    public init(timestamp: TimeInterval, file: String) {
+        self.timestamp = timestamp
+        self.file = file
+    }
+}
+
 /// Metadata persisted alongside a captured meeting's audio + timeline on disk.
 public struct MeetingRecording: Codable, Sendable, Equatable {
     public let meeting: Meeting
@@ -187,19 +199,38 @@ public struct MeetingRecording: Codable, Sendable, Equatable {
     public let micAudioFile: String  // filename within the bundle
     public let systemAudioFile: String
     public let timeline: SpeakerTimeline
+    /// Pictures of a shared screen captured during the meeting, oldest first.
+    /// Empty for meetings with no presentation — and for every recording saved
+    /// before slide capture existed (see `init(from:)`).
+    public let slides: [SlideKeyframe]
 
     public init(
         meeting: Meeting,
         recordedAt: Date,
         micAudioFile: String,
         systemAudioFile: String,
-        timeline: SpeakerTimeline
+        timeline: SpeakerTimeline,
+        slides: [SlideKeyframe] = []
     ) {
         self.meeting = meeting
         self.recordedAt = recordedAt
         self.micAudioFile = micAudioFile
         self.systemAudioFile = systemAudioFile
         self.timeline = timeline
+        self.slides = slides
+    }
+
+    /// Hand-written so `slides` can be absent: every `recording.json` written before
+    /// slide capture existed lacks the key, and the synthesized decoder would reject
+    /// those files outright — losing the user's entire history.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        meeting = try c.decode(Meeting.self, forKey: .meeting)
+        recordedAt = try c.decode(Date.self, forKey: .recordedAt)
+        micAudioFile = try c.decode(String.self, forKey: .micAudioFile)
+        systemAudioFile = try c.decode(String.self, forKey: .systemAudioFile)
+        timeline = try c.decode(SpeakerTimeline.self, forKey: .timeline)
+        slides = try c.decodeIfPresent([SlideKeyframe].self, forKey: .slides) ?? []
     }
 }
 
