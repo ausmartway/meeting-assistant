@@ -463,9 +463,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         // so it must stay inside this Task too — never move it into the handler body.
         Task { [weak self] in
             guard let self else { return }
+            await self.slideRecorder?.consider(pixelBuffer, at: elapsed)
             let sample = await self.sampler.sample(pixelBuffer, at: elapsed)
             self.sampleQueue.sync { self.samples.append(sample) }
-            await self.slideRecorder?.consider(pixelBuffer, at: elapsed)
         }
     }
 
