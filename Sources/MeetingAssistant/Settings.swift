@@ -40,6 +40,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(identifyInRoomSpeakers, forKey: Keys.identifyInRoomSpeakers) }
     }
 
+    /// Whether to save pictures of a shared screen when someone presents (R28). On by
+    /// default — the app should just do it — with this toggle for meetings where a
+    /// customer's screen shouldn't be kept on disk.
+    @Published var captureSlides: Bool {
+        didSet { defaults.set(captureSlides, forKey: Keys.captureSlides) }
+    }
+
     /// Display name for the local user ("me") in transcripts and the UI. Defaults to
     /// the macOS account full name; editable. Blank falls back to the account name,
     /// then "Me".
@@ -71,6 +78,7 @@ final class AppSettings: ObservableObject {
         static let transcriptionWorkers = "transcriptionWorkers"
         static let showDockIcon = "showDockIcon"
         static let identifyInRoomSpeakers = "identifyInRoomSpeakers"
+        static let captureSlides = "captureSlides"
         static let localUserName = "localUserName"
         static let mediaRetentionDays = "mediaRetentionDays"
         static let transcriptRetentionDays = "transcriptRetentionDays"
@@ -97,6 +105,11 @@ final class AppSettings: ObservableObject {
             ? true
             : defaults.bool(forKey: Keys.showDockIcon)
         self.identifyInRoomSpeakers = defaults.bool(forKey: Keys.identifyInRoomSpeakers)
+        // Default ON the first time (key absent); respect the user's choice after.
+        self.captureSlides =
+            defaults.object(forKey: Keys.captureSlides) == nil
+            ? true
+            : defaults.bool(forKey: Keys.captureSlides)
         self.localUserName = LocalUserName.resolve(
             override: defaults.string(forKey: Keys.localUserName) ?? "",
             accountName: NSFullUserName())

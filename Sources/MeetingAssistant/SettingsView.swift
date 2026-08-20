@@ -43,6 +43,23 @@ struct SettingsView: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
+
+            Section {
+                Toggle(
+                    "Capture shared screens",
+                    isOn: Binding(
+                        get: { state.settings.captureSlides },
+                        set: { state.settings.captureSlides = $0 }
+                    )
+                )
+            } footer: {
+                Text(
+                    "Saves a picture whenever a presented screen changes, shown in the "
+                        + "transcript where it appeared. Kept as long as the transcript, "
+                        + "and only the meeting window is ever captured."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

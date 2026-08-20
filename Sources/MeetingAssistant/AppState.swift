@@ -412,6 +412,9 @@ final class AppState: ObservableObject {
         lastError = nil
         captureWarning = nil
         let session = CaptureSession(meeting: meeting, store: store)
+        // R28: read once at start, so toggling Settings mid-meeting can't change
+        // what this recording captures halfway through.
+        session.capturesSlides = settings.captureSlides
         // Surface live capture problems (e.g. the mic producing no audio on AirPods)
         // so the user can fix the device mid-meeting instead of finding out after.
         session.onWarning = { [weak self] message in
@@ -573,6 +576,13 @@ final class AppState: ObservableObject {
     /// The meeting bundle directory holding mic.wav / system.wav.
     func audioDirectory(for recording: MeetingRecording) -> URL? {
         try? store.directory(for: recording.meeting.id)
+    }
+
+    /// Directory holding a meeting's captured slide images. Unlike the audio
+    /// directory this stays valid after audio expires — slides are kept as long as
+    /// the transcript (R26).
+    func slidesDirectory(for recording: MeetingRecording) -> URL {
+        store.slidesDirectory(for: recording.meeting.id)
     }
 
     /// Whether a saved recording still has its audio (so it can be re-transcribed).

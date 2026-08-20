@@ -128,6 +128,13 @@ public final class MeetingStore {
         root.appendingPathComponent(sanitize(meetingID)).appendingPathComponent("transcript.md")
     }
 
+    /// On-disk location of a meeting's captured slide images (may not exist). Uses the
+    /// non-creating path deliberately: `directory(for:)` creates on demand and would
+    /// resurrect a deleted bundle as an empty folder.
+    public func slidesDirectory(for meetingID: String) -> URL {
+        bundleURL(for: meetingID).appendingPathComponent("slides", isDirectory: true)
+    }
+
     /// Delete a meeting's entire bundle — audio, metadata, and transcript — from
     /// disk, so recordings don't accumulate forever in a folder the user can't see.
     public func delete(meetingID: String) throws {
