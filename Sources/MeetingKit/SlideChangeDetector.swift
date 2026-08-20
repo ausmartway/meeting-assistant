@@ -38,6 +38,19 @@ public struct FrameSignature: Equatable, Sendable {
 /// slide is stamped up to one sample interval after it appeared, which is irrelevant
 /// for a slide that stays up for minutes.
 ///
+/// What `consider` decided, plus the two distances behind the decision — logged by
+/// `SlideRecorder` so the thresholds can be calibrated from real meetings without a
+/// duplicate copy of the render-and-reduce pipeline.
+public struct SlideDecision: Equatable, Sendable {
+    public let save: Bool
+    /// Distance to the previous sample. Below `stillThreshold` means "holding still".
+    /// Nil for the very first sample, which has no predecessor.
+    public let stillDistance: Double?
+    /// Distance to the last kept keyframe. Above `changeThreshold` means "new
+    /// content". Nil when no keyframe has been kept yet.
+    public let changeDistance: Double?
+}
+
 /// Pure and deterministic (no I/O, no frameworks), so every branch is unit-tested.
 public struct SlideChangeDetector {
     /// Distance below which consecutive samples count as "the picture is holding
@@ -68,25 +81,43 @@ public struct SlideChangeDetector {
         self.maxKeyframes = maxKeyframes
     }
 
+    /// Whether the per-meeting cap has been reached — further frames will never be
+    /// saved. Lets a caller skip the (comparatively expensive) render step entirely
+    /// once nothing it produces could be kept.
+    public var isExhausted: Bool { count >= maxKeyframes }
+
     /// Whether the caller should save `signature`'s frame as a keyframe.
     /// Call once per sampled frame, in time order.
     public mutating func consider(_ signature: FrameSignature, at t: TimeInterval) -> Bool {
+        decide(signature, at: t).save
+    }
+
+    /// Same decision as `consider`, plus the two distances it was based on — so a
+    /// caller can log real numbers for threshold calibration instead of
+    /// re-implementing this comparison. Call once per sampled frame, in time order.
+    public mutating func decide(_ signature: FrameSignature, at t: TimeInterval) -> SlideDecision {
         defer { previous = signature }
+
+        let stillDistance = previous.map { signature.distance(to: $0) }
+        let changeDistance = lastKeyframe.map { signature.distance(to: $0) }
+        func result(_ save: Bool) -> SlideDecision {
+            SlideDecision(save: save, stillDistance: stillDistance, changeDistance: changeDistance)
+        }
 
         // No predecessor yet: we can't know the picture is still, and second-zero
         // content is as likely to be a lobby screen as a slide.
-        guard let previous else { return false }
-        guard count < maxKeyframes else { return false }
-        guard signature.distance(to: previous) <= stillThreshold else { return false }
+        guard let stillDistance else { return result(false) }
+        guard count < maxKeyframes else { return result(false) }
+        guard stillDistance <= stillThreshold else { return result(false) }
 
-        if let lastKeyframeTime, t - lastKeyframeTime < minInterval { return false }
-        if let lastKeyframe, signature.distance(to: lastKeyframe) < changeThreshold {
-            return false
+        if let lastKeyframeTime, t - lastKeyframeTime < minInterval { return result(false) }
+        if let changeDistance, changeDistance < changeThreshold {
+            return result(false)
         }
 
         lastKeyframe = signature
         lastKeyframeTime = t
         count += 1
-        return true
+        return result(true)
     }
 }

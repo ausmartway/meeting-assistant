@@ -62,9 +62,25 @@ public actor SlideRecorder {
         }
         lastConsideredTime = t
 
+        // The cap is hit rarely (a very long meeting), but once it is, every
+        // remaining sample would otherwise pay for a CoreImage render it can never
+        // keep — skip it before doing any of that work.
+        guard !detector.isExhausted else { return }
+
         guard let signature = signature(of: pixelBuffer) else { return }
-        guard detector.consider(signature, at: t) else { return }
+        let decision = detector.decide(signature, at: t)
+        Self.log.info(
+            "SLIDEDIST t=\(Int(t), privacy: .public) still=\(Self.format(decision.stillDistance), privacy: .public) change=\(Self.format(decision.changeDistance), privacy: .public) save=\(decision.save ? 1 : 0, privacy: .public)"
+        )
+        guard decision.save else { return }
         write(pixelBuffer, at: t)
+    }
+
+    /// Format an optional distance to 4 decimal places for the greppable
+    /// `SLIDEDIST` log line — calibration tooling parses this text.
+    private static func format(_ distance: Double?) -> String {
+        guard let distance else { return "nil" }
+        return String(format: "%.4f", distance)
     }
 
     /// Every keyframe written so far, oldest first. Read once at `stop()`.
