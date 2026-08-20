@@ -19,9 +19,16 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     /// How often to sample a video frame for active-speaker detection.
     public var frameSampleInterval: TimeInterval = 2.5
 
+    /// Whether to save pictures of a shared screen when someone presents (R28).
+    /// Set from Settings before `start()`; on by default.
+    public var capturesSlides: Bool = true
+
     private let meeting: Meeting
     private let store: MeetingStore
     private let sampler: SpeakerSampler
+    /// Writes shared-screen keyframes. Nil when slide capture is off (R28) — and it
+    /// stays nil for the whole session, so the flag can't change mid-meeting.
+    private var slideRecorder: SlideRecorder?
 
     private var audioStream: SCStream?
     private var videoStream: SCStream?
@@ -70,6 +77,9 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
     public func start() async throws {
         let dir = try store.directory(for: meeting.id)
 
+        if capturesSlides {
+            slideRecorder = SlideRecorder(directory: dir)
+        }
         try startMicrophoneCapture(into: dir.appendingPathComponent("mic.wav"))
         try await startSystemCapture(systemAudioURL: dir.appendingPathComponent("system.wav"))
     }
@@ -105,12 +115,14 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         systemFile = nil
 
         let timeline = SpeakerTimeline(samples: sampleQueue.sync { samples })
+        let slides = await slideRecorder?.keyframes() ?? []
         let recording = MeetingRecording(
             meeting: meeting,
             recordedAt: startWallClock,
             micAudioFile: "mic.wav",
             systemAudioFile: "system.wav",
-            timeline: timeline
+            timeline: timeline,
+            slides: slides
         )
         try store.save(recording)
     }
@@ -442,11 +454,18 @@ public final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastFrameSample = elapsed
 
-        // Run the (best-effort) speaker read off the capture queue.
+        // Run the (best-effort) speaker read and slide capture off the capture queue.
+        // `outputQueue` is serial and shared with system-audio delivery, so CoreImage
+        // and file work must never happen in the handler itself — a backed-up handler
+        // queue makes ScreenCaptureKit shed audio samples, which silently shortens
+        // system.wav and shifts every later timestamp.
+        // `SlideRecorder.consider` below is exactly that kind of CoreImage/file work,
+        // so it must stay inside this Task too — never move it into the handler body.
         Task { [weak self] in
             guard let self else { return }
             let sample = await self.sampler.sample(pixelBuffer, at: elapsed)
             self.sampleQueue.sync { self.samples.append(sample) }
+            await self.slideRecorder?.consider(pixelBuffer, at: elapsed)
         }
     }
 
