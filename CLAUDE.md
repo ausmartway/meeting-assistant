@@ -66,7 +66,7 @@ the mic path.
 
 ```
 CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recording?" notification → user taps Start
-  → CaptureSession  [LIVE: ScreenCaptureKit system audio + AVAudioEngine mic + SpeakerSampler frames]
+  → CaptureSession  [LIVE: ScreenCaptureKit system audio + AVAudioEngine mic + SpeakerSampler frames + SlideRecorder keyframes]
   → MeetingRecording bundle on disk (MeetingStore)
   → MeetingProcessor: Transcriber → HallucinationFilter → SpeakerFuser → TranscriptFormatter
   → transcript.md
@@ -82,6 +82,26 @@ CalendarWatcher (EventKit) → MeetingDetector (NSWorkspace) → "Start recordin
   clearly dominates the frame (a 1-on-1 / speaker view), it OCRs that tile anyway
   (`SpeakerSampler.dominantTile`) so a lone remote participant still gets named.
   Treat any feature depending on named remote attribution as best-effort.
+
+### Shared-screen capture reuses the frame the speaker sampler already gets
+
+`SlideRecorder` (an actor) saves a JPEG whenever the presented content changes: each
+sampled frame becomes a 16×16 grey `FrameSignature`, and the pure `SlideChangeDetector`
+keeps a frame that is *holding still* (barely differs from the previous sample) yet *new*
+(differs from the last kept frame). Talking heads never hold still, so faces aren't
+captured; a shared video keeps moving and is skipped. Keyframes land in the bundle's
+`slides/`, are listed in `recording.json` (`MeetingRecording.slides`), written into
+`transcript.md` as Markdown image lines by `TranscriptFormatter`, and recovered by
+`TranscriptParser` into `Parsed.slides` — **kept separate from `Parsed.turns`**, because
+`TranscriptAudioLocator` matches turns positionally against `segments.json` and extra
+entries would silently break per-line playback.
+
+**All slide work must stay off `CaptureSession.outputQueue.`** That queue is serial and
+serves *both* the system-audio and screen-frame outputs, so CoreImage/file work in the
+handler back-pressures audio delivery; ScreenCaptureKit then sheds samples, and since
+`system.wav` is written by appending buffers with no timestamps, shed samples silently
+shorten the file and shift every later timestamp. Keep the work inside the `Task` that
+`handleVideoFrame` spawns.
 
 ### Languages
 
@@ -125,7 +145,7 @@ Pure, deterministic logic is unit-tested with **swift-testing** (`import Testing
 `HallucinationFilter`, `TranscriptFormatter`, `WhisperTextCleaner`,
 `SpeakerSampler.bestName`/`.dominantTile`, `Meeting.adHoc`, `MeetingDetector.isInProgress`,
 `MeetingNotification`, `ParakeetSegmentBuilder`, `EngineRouter`,
-`AutoRoutingTranscriber`, `CaptureSession.convert` (mic resampling),
+`AutoRoutingTranscriber`, `CaptureSession.convert` (mic resampling), `SlideChangeDetector`,
 `TranscriptTitleEditor`, `RetentionPolicy`, `MeetingStore.sweep`/`hasAudio`/`expireMedia`,
 `DisplaySelector`, `MeetingProvider.meetingAppBundleIDs`, `TranscriptionETA`,
 `MeetingSearch`, `LocalUserName`, `SpeakerLibrary.setLocalUserName`, and
