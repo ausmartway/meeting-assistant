@@ -85,4 +85,18 @@ struct SlideChangeDetectorTests {
         _ = loose.consider(flat(10), at: 0)
         #expect(loose.consider(flat(30), at: 2.5) == true)
     }
+
+    @Test("distance returns 1 for signatures with different cell counts")
+    func distanceMismatchedSizes() {
+        let sig1 = FrameSignature(cells: [UInt8](repeating: 10, count: 256))
+        let sig2 = FrameSignature(cells: [UInt8](repeating: 10, count: 100))
+        #expect(sig1.distance(to: sig2) == 1)
+    }
+
+    @Test("distance returns 1 for two empty signatures")
+    func distanceEmptySignatures() {
+        let empty1 = FrameSignature(cells: [])
+        let empty2 = FrameSignature(cells: [])
+        #expect(empty1.distance(to: empty2) == 1)
+    }
 }
