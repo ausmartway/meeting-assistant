@@ -10,7 +10,11 @@ import os
 /// a JPEG when it is.
 ///
 /// An `actor` for two reasons. First, the detector's rule depends on frames arriving in
-/// **time order**, and actor isolation serializes `consider` calls without a lock.
+/// **time order**; actor isolation only gives mutual exclusion between `consider` calls,
+/// not ordering — each call arrives from its own `Task` after a Vision OCR of variable
+/// latency (see `CaptureSession.handleVideoFrame`), so a slow OCR can let a later
+/// frame's `Task` reach us first. `consider` below defends the ordering itself, by
+/// dropping any frame whose timestamp doesn't strictly advance.
 /// Second — and this is the load-bearing one — `CaptureSession`'s `outputQueue` is a
 /// *serial* queue shared by the system-audio and screen-frame handlers, so CoreImage and
 /// file work must never run on it: ScreenCaptureKit sheds samples when a client's handler
@@ -31,6 +35,7 @@ public actor SlideRecorder {
     private var detector: SlideChangeDetector
     private var saved: [SlideKeyframe] = []
     private var didCreateDirectory = false
+    private var lastConsideredTime: TimeInterval?
 
     public init(
         directory: URL,
@@ -45,6 +50,18 @@ public actor SlideRecorder {
     /// Consider one sampled frame; writes a keyframe if it looks like new, settled
     /// presentation content. Call in time order, once per sampled frame.
     public func consider(_ pixelBuffer: CVPixelBuffer, at t: TimeInterval) {
+        // Defense-in-depth for SlideChangeDetector's "call in time order" precondition:
+        // the call site awaits a variable-latency Vision OCR before reaching us (see the
+        // type's doc comment above), so an earlier frame's Task can be overtaken by a
+        // later one's. This is expected under load, not an error — drop and move on.
+        if let lastConsideredTime, t <= lastConsideredTime {
+            Self.log.info(
+                "Dropping an out-of-order frame at \(t, privacy: .public)s (last considered was \(lastConsideredTime, privacy: .public)s)."
+            )
+            return
+        }
+        lastConsideredTime = t
+
         guard let signature = signature(of: pixelBuffer) else { return }
         guard detector.consider(signature, at: t) else { return }
         write(pixelBuffer, at: t)
@@ -94,7 +111,7 @@ public actor SlideRecorder {
     /// offset, so filenames are deterministic and sort chronologically; the 5 s
     /// `minInterval` makes collisions impossible.
     private func write(_ pixelBuffer: CVPixelBuffer, at t: TimeInterval) {
-        let name = String(format: "slide-%04d.jpg", Int(t))
+        let name = String(format: "slide-%05d.jpg", Int(t))
         let relativePath = "slides/\(name)"
         let directory = bundleDirectory.appendingPathComponent("slides", isDirectory: true)
 
