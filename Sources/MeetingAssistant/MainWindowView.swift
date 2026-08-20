@@ -716,7 +716,7 @@ private struct TranscriptReadingView: View {
             } ?? Array(repeating: nil, count: parsed.turns.count)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if parsed.turns.isEmpty {
+                if parsed.turns.isEmpty && parsed.slides.isEmpty {
                     Text(document == nil ? "No transcript yet." : "This transcript is empty.")
                         .font(Theme.reading).foregroundStyle(.secondary)
                         .padding(.vertical, Theme.Space.l)
