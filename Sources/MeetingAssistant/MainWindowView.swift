@@ -428,7 +428,8 @@ private struct MeetingDetailView: View {
             TranscriptReadingView(
                 document: state.transcript(for: recording),
                 localUserName: state.settings.localUserName,
-                playback: playbackContext
+                playback: playbackContext,
+                slidesDirectory: state.slidesDirectory(for: recording)
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -688,6 +689,10 @@ private struct TranscriptReadingView: View {
     let document: String?
     let localUserName: String
     var playback: Playback? = nil
+    /// Where this meeting's captured slide images live (R28). Separate from
+    /// `playback` on purpose: slides outlive the audio, so they must still render
+    /// once `playback` is nil after audio expiry.
+    var slidesDirectory: URL? = nil
 
     /// Context needed to play the exact audio behind a transcript line
     /// (speaker verification, R27). Nil when there's no audio to play from.
@@ -721,12 +726,22 @@ private struct TranscriptReadingView: View {
                             .font(.caption).foregroundStyle(.secondary)
                             .padding(.bottom, Theme.Space.m)
                     }
+                    // A slide with afterTurnIndex == -1 appeared before any speech.
+                    ForEach(parsed.slides.filter { $0.afterTurnIndex < 0 }, id: \.file) { slide in
+                        SlideImageView(slide: slide, directory: slidesDirectory)
+                            .padding(.bottom, Theme.Space.m)
+                    }
                     ForEach(Array(parsed.turns.enumerated()), id: \.offset) { index, turn in
                         TurnView(
                             turn: turn, localUserName: localUserName, index: index,
                             clip: clips[index], playback: playback
                         )
                         .padding(.bottom, Theme.Space.m)
+                        ForEach(parsed.slides.filter { $0.afterTurnIndex == index }, id: \.file) {
+                            slide in
+                            SlideImageView(slide: slide, directory: slidesDirectory)
+                                .padding(.bottom, Theme.Space.m)
+                        }
                     }
                     transcriptFooter(parsed)
                 }
@@ -863,6 +878,43 @@ private struct TurnView: View {
             .foregroundStyle(isPlaying ? Theme.accent : .secondary)
             .help(isPlaying ? "Stop" : "Play this line")
             .opacity(isPlaying || hoveredTurn ? 1 : 0.3)
+        }
+    }
+}
+
+/// One captured shared screen, shown where it appeared in the conversation (R28).
+/// Clicking opens the file in Preview — the native way to zoom, with no window
+/// plumbing of our own. Renders nothing if the file is missing (a hand-deleted
+/// image, or a transcript exported away from its bundle), so a gap never becomes
+/// an error.
+private struct SlideImageView: View {
+    let slide: TranscriptParser.Slide
+    let directory: URL?
+
+    /// `slide.file` is bundle-relative ("slides/slide-0030.jpg") while `directory`
+    /// already points at `slides/`, so resolve against the bundle root.
+    private var url: URL? {
+        guard let directory else { return nil }
+        return directory.deletingLastPathComponent().appendingPathComponent(slide.file)
+    }
+
+    var body: some View {
+        if let url, let image = NSImage(contentsOf: url) {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(.quaternary, lineWidth: 1)
+                    )
+                    .onTapGesture { NSWorkspace.shared.open(url) }
+                    .help("Open this screen in Preview")
+                Text("Shared screen · \(slide.time)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
