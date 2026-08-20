@@ -167,7 +167,8 @@ public final class MeetingProcessor {
             meeting: recording.meeting,
             segments: labeled,
             baseDate: recording.recordedAt,
-            note: note
+            note: note,
+            slides: recording.slides
         )
         try store.saveTranscript(transcript, for: recording.meeting.id)
         // Persist the fused segments so each transcript line can be played back
