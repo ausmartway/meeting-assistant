@@ -28,3 +28,6 @@ Models/
 
 # Captured meeting data (local recordings, transcripts)
 MeetingData/
+
+# Product requirements — kept local, not published
+REQUIREMENTS.md
