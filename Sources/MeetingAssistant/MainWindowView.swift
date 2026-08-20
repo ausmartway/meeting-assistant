@@ -693,6 +693,11 @@ private struct TranscriptReadingView: View {
     /// `playback` on purpose: slides outlive the audio, so they must still render
     /// once `playback` is nil after audio expiry.
     var slidesDirectory: URL? = nil
+    /// Keeps loaded slide images across body re-evaluations. `MeetingDetailView`
+    /// observes `AppState`, which republishes on roughly every transcription-progress
+    /// tick, so without a cache each tick would re-read every visible slide's JPEG
+    /// from disk again.
+    @State private var slideImageCache = SlideImageCache()
 
     /// Context needed to play the exact audio behind a transcript line
     /// (speaker verification, R27). Nil when there's no audio to play from.
@@ -714,8 +719,11 @@ private struct TranscriptReadingView: View {
                     localUserName: localUserName, micFileName: p.micFileName,
                     systemFileName: p.systemFileName)
             } ?? Array(repeating: nil, count: parsed.turns.count)
+        // Grouped once so the per-turn loop below does a dictionary lookup instead
+        // of re-scanning every slide for every turn.
+        let slidesByTurn = Dictionary(grouping: parsed.slides, by: \.afterTurnIndex)
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if parsed.turns.isEmpty && parsed.slides.isEmpty {
                     Text(document == nil ? "No transcript yet." : "This transcript is empty.")
                         .font(Theme.reading).foregroundStyle(.secondary)
@@ -728,8 +736,10 @@ private struct TranscriptReadingView: View {
                     }
                     // A slide with afterTurnIndex == -1 appeared before any speech.
                     ForEach(parsed.slides.filter { $0.afterTurnIndex < 0 }, id: \.file) { slide in
-                        SlideImageView(slide: slide, directory: slidesDirectory)
-                            .padding(.bottom, Theme.Space.m)
+                        SlideImageView(
+                            slide: slide, directory: slidesDirectory, cache: slideImageCache
+                        )
+                        .padding(.bottom, Theme.Space.m)
                     }
                     ForEach(Array(parsed.turns.enumerated()), id: \.offset) { index, turn in
                         TurnView(
@@ -737,10 +747,11 @@ private struct TranscriptReadingView: View {
                             clip: clips[index], playback: playback
                         )
                         .padding(.bottom, Theme.Space.m)
-                        ForEach(parsed.slides.filter { $0.afterTurnIndex == index }, id: \.file) {
-                            slide in
-                            SlideImageView(slide: slide, directory: slidesDirectory)
-                                .padding(.bottom, Theme.Space.m)
+                        ForEach(slidesByTurn[index] ?? [], id: \.file) { slide in
+                            SlideImageView(
+                                slide: slide, directory: slidesDirectory, cache: slideImageCache
+                            )
+                            .padding(.bottom, Theme.Space.m)
                         }
                     }
                     transcriptFooter(parsed)
@@ -882,36 +893,65 @@ private struct TurnView: View {
     }
 }
 
+/// A tiny in-memory cache of loaded slide JPEGs, keyed by resolved file URL. A
+/// plain (non-`ObservableObject`) reference type held as `@State` by
+/// `TranscriptReadingView`: reads happen synchronously during `body`, so nothing
+/// needs to observe it — it just has to survive across re-renders so a re-render
+/// doesn't re-read every visible slide from disk (R28 reading view is re-rendered
+/// often; see `TranscriptReadingView`'s `slideImageCache` doc comment). No
+/// eviction: the 300-keyframe cap already bounds worst case.
+private final class SlideImageCache {
+    private var images: [URL: NSImage] = [:]
+
+    func image(for url: URL) -> NSImage? {
+        if let cached = images[url] { return cached }
+        guard let loaded = NSImage(contentsOf: url) else { return nil }
+        images[url] = loaded
+        return loaded
+    }
+}
+
 /// One captured shared screen, shown where it appeared in the conversation (R28).
-/// Clicking opens the file in Preview — the native way to zoom, with no window
-/// plumbing of our own. Renders nothing if the file is missing (a hand-deleted
-/// image, or a transcript exported away from its bundle), so a gap never becomes
-/// an error.
+/// Clicking opens the file in the user's default viewer for the image — the native
+/// way to zoom, with no window plumbing of our own. Renders nothing if the file is
+/// missing (a hand-deleted image, or a transcript exported away from its bundle),
+/// so a gap never becomes an error.
 private struct SlideImageView: View {
     let slide: TranscriptParser.Slide
     let directory: URL?
+    let cache: SlideImageCache
 
-    /// `slide.file` is bundle-relative ("slides/slide-0030.jpg") while `directory`
+    /// `slide.file` is bundle-relative ("slides/slide-00030.jpg") while `directory`
     /// already points at `slides/`, so resolve against the bundle root.
+    ///
+    /// `slide.file` comes from parsing a user-editable document (`transcript.md`) in
+    /// an unsandboxed app, so it isn't trusted blindly: require it to name a file
+    /// inside `slides/` with no `..` component before resolving it, so a hand-edited
+    /// transcript can't walk the resolved path outside the meeting's bundle.
     private var url: URL? {
         guard let directory else { return nil }
+        guard slide.file.hasPrefix("slides/"), !slide.file.contains("..") else { return nil }
         return directory.deletingLastPathComponent().appendingPathComponent(slide.file)
     }
 
     var body: some View {
-        if let url, let image = NSImage(contentsOf: url) {
+        if let url, let image = cache.image(for: url) {
             VStack(alignment: .leading, spacing: 4) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(.quaternary, lineWidth: 1)
-                    )
-                    .onTapGesture { NSWorkspace.shared.open(url) }
-                    .help("Open this screen in Preview")
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(.quaternary, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Open this screen in the default viewer")
                 Text("Shared screen · \(slide.time)")
                     .font(.caption).foregroundStyle(.secondary)
             }
