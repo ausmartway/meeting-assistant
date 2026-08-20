@@ -83,4 +83,85 @@ struct SlideTranscriptTests {
         #expect(doc.contains("![Shared screen "))
         #expect(doc.contains("](slides/slide-0030.jpg)"))
     }
+
+    // MARK: - Parsing back
+
+    private var documentWithSlide: String {
+        """
+        # Sync
+        1970-01-01T00:00:00Z
+
+        **[00:00:00] Me:** hello
+        ![Shared screen 00:00:30](slides/slide-0030.jpg)
+        **[00:10:00] Ada:** hi
+        """
+    }
+
+    @Test("a slide line is parsed into slides, not turns")
+    func slideParsedSeparately() {
+        let parsed = TranscriptParser.parse(documentWithSlide)
+        #expect(parsed.turns.count == 2)
+        #expect(parsed.slides.count == 1)
+        #expect(parsed.slides[0].file == "slides/slide-0030.jpg")
+        #expect(parsed.slides[0].time == "00:00:30")
+        #expect(parsed.slides[0].afterTurnIndex == 0)
+    }
+
+    @Test("turns are identical with and without slide lines (R27 playback can't regress)")
+    func turnsUnaffectedBySlides() {
+        let withoutSlide =
+            documentWithSlide
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.hasPrefix("![") }
+            .joined(separator: "\n")
+        #expect(
+            TranscriptParser.parse(documentWithSlide).turns
+                == TranscriptParser.parse(withoutSlide).turns)
+    }
+
+    @Test("a slide before the first turn gets index -1")
+    func slideBeforeFirstTurnParsed() {
+        let doc = """
+            # Sync
+            1970-01-01T00:00:00Z
+
+            ![Shared screen 00:00:05](slides/slide-0005.jpg)
+            **[00:01:00] Ada:** hi
+            """
+        let parsed = TranscriptParser.parse(doc)
+        #expect(parsed.slides.count == 1)
+        #expect(parsed.slides[0].afterTurnIndex == -1)
+        #expect(parsed.turns.count == 1)
+        #expect(parsed.title == "Sync")  // the slide line didn't eat the header
+    }
+
+    @Test("a malformed image line doesn't corrupt the preceding turn")
+    func malformedImageLineIgnored() {
+        let doc = """
+            **[00:00:00] Me:** hello
+            ![Shared screen 00:00:30
+            """
+        let parsed = TranscriptParser.parse(doc)
+        #expect(parsed.slides.isEmpty)
+        #expect(parsed.turns.count == 1)
+        // It falls through to the stray-line rule, which appends it to the last turn —
+        // ugly but lossless, and it never fabricates a slide.
+        #expect(parsed.turns[0].text.hasPrefix("hello"))
+    }
+
+    @Test("a formatted document round-trips through the parser")
+    func roundTrip() {
+        let meeting = Meeting(
+            id: "m1", title: "Sync", startDate: base, endDate: base.addingTimeInterval(1800),
+            provider: nil, joinURL: nil)
+        let doc = TranscriptFormatter.document(
+            meeting: meeting,
+            segments: [segment(0, "Me", "hello"), segment(600, "Ada", "hi")],
+            baseDate: base, note: nil,
+            slides: [SlideKeyframe(timestamp: 30, file: "slides/slide-0030.jpg")])
+        let parsed = TranscriptParser.parse(doc)
+        #expect(parsed.turns.count == 2)
+        #expect(parsed.slides.count == 1)
+        #expect(parsed.slides[0].afterTurnIndex == 0)
+    }
 }

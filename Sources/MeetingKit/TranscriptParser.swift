@@ -17,14 +17,32 @@ public enum TranscriptParser {
         }
     }
 
+    /// A shared-screen keyframe recovered from the document (R28). Kept **separate**
+    /// from `turns` on purpose: `TranscriptAudioLocator` matches turns positionally
+    /// against `segments.json`, so adding non-speech entries to `turns` would silently
+    /// break per-line audio playback (R27).
+    public struct Slide: Equatable, Sendable {
+        public let time: String  // "00:00:30", as written in the document
+        public let file: String  // bundle-relative, e.g. "slides/slide-0030.jpg"
+        /// Index of the turn this slide follows; `-1` when it precedes all speech.
+        public let afterTurnIndex: Int
+        public init(time: String, file: String, afterTurnIndex: Int) {
+            self.time = time
+            self.file = file
+            self.afterTurnIndex = afterTurnIndex
+        }
+    }
+
     public struct Parsed: Equatable, Sendable {
         public let title: String?
         public let note: String?
         public let turns: [Turn]
-        public init(title: String?, note: String?, turns: [Turn]) {
+        public let slides: [Slide]
+        public init(title: String?, note: String?, turns: [Turn], slides: [Slide] = []) {
             self.title = title
             self.note = note
             self.turns = turns
+            self.slides = slides
         }
     }
 
@@ -32,6 +50,7 @@ public enum TranscriptParser {
         var title: String?
         var note: String?
         var turns: [Turn] = []
+        var slides: [Slide] = []
 
         for raw in document.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = raw.trimmingCharacters(in: .whitespaces)
@@ -39,6 +58,11 @@ public enum TranscriptParser {
 
             if let turn = parseTurn(line) {
                 turns.append(turn)
+                continue
+            }
+
+            if let slide = parseSlide(line, afterTurnIndex: turns.count - 1) {
+                slides.append(slide)
                 continue
             }
 
@@ -59,7 +83,21 @@ public enum TranscriptParser {
             turns.append(Turn(time: last.time, speaker: last.speaker, text: last.text + " " + line))
         }
 
-        return Parsed(title: title, note: note, turns: turns)
+        return Parsed(title: title, note: note, turns: turns, slides: slides)
+    }
+
+    /// Parse `![<alt>](<path>)`; nil if `line` isn't a well-formed image line. The alt
+    /// text's trailing token is the timestamp the formatter wrote
+    /// ("Shared screen 00:00:30").
+    private static func parseSlide(_ line: String, afterTurnIndex: Int) -> Slide? {
+        guard line.hasPrefix("!["), line.hasSuffix(")"),
+            let altEnd = line.range(of: "](")
+        else { return nil }
+        let alt = String(line[line.index(line.startIndex, offsetBy: 2)..<altEnd.lowerBound])
+        let path = String(line[altEnd.upperBound..<line.index(before: line.endIndex)])
+        guard !path.isEmpty else { return nil }
+        let time = alt.split(separator: " ").last.map(String.init) ?? ""
+        return Slide(time: time, file: path, afterTurnIndex: afterTurnIndex)
     }
 
     /// Parse `**[<time>] <speaker>:** <text>`; nil if `line` isn't a turn line.
