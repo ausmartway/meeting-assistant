@@ -184,7 +184,7 @@ public struct LabeledSegment: Codable, Sendable, Equatable {
 /// whenever the presented content materially changed.
 public struct SlideKeyframe: Codable, Sendable, Equatable {
     public let timestamp: TimeInterval  // seconds from meeting start
-    public let file: String  // bundle-relative path, e.g. "slides/slide-0391.jpg"
+    public let file: String  // bundle-relative path, e.g. "slides/slide-00391.jpg"
 
     public init(timestamp: TimeInterval, file: String) {
         self.timestamp = timestamp
@@ -218,6 +218,28 @@ public struct MeetingRecording: Codable, Sendable, Equatable {
         self.systemAudioFile = systemAudioFile
         self.timeline = timeline
         self.slides = slides
+    }
+
+    /// A copy of this recording under a new meeting title, preserving every other
+    /// field. Lives here rather than at the call site because the app target has no
+    /// tests: a hand-written copy-construct there silently drops any field added to
+    /// this type later — which is exactly how the slide manifest was once lost on
+    /// rename.
+    public func retitled(to newTitle: String) -> MeetingRecording {
+        MeetingRecording(
+            meeting: Meeting(
+                id: meeting.id,
+                title: newTitle,
+                startDate: meeting.startDate,
+                endDate: meeting.endDate,
+                provider: meeting.provider,
+                joinURL: meeting.joinURL),
+            recordedAt: recordedAt,
+            micAudioFile: micAudioFile,
+            systemAudioFile: systemAudioFile,
+            timeline: timeline,
+            slides: slides
+        )
     }
 
     /// Hand-written so `slides` can be absent: every `recording.json` written before

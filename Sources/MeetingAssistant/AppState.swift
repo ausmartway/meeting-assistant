@@ -598,17 +598,7 @@ final class AppState: ObservableObject {
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != recording.meeting.title else { return }
         let m = recording.meeting
-        let renamed = Meeting(
-            id: m.id, title: trimmed, startDate: m.startDate, endDate: m.endDate,
-            provider: m.provider, joinURL: m.joinURL
-        )
-        let updated = MeetingRecording(
-            meeting: renamed,
-            recordedAt: recording.recordedAt,
-            micAudioFile: recording.micAudioFile,
-            systemAudioFile: recording.systemAudioFile,
-            timeline: recording.timeline
-        )
+        let updated = recording.retitled(to: trimmed)
         do {
             try store.save(updated)
             if let current = store.transcript(for: m.id) {
