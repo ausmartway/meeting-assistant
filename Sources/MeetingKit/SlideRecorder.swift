@@ -11,10 +11,10 @@ import os
 ///
 /// An `actor` for two reasons. First, the detector's rule depends on frames arriving in
 /// **time order**; actor isolation only gives mutual exclusion between `consider` calls,
-/// not ordering — each call arrives from its own `Task` after a Vision OCR of variable
-/// latency (see `CaptureSession.handleVideoFrame`), so a slow OCR can let a later
-/// frame's `Task` reach us first. `consider` below defends the ordering itself, by
-/// dropping any frame whose timestamp doesn't strictly advance.
+/// not ordering — each frame is handed to us by its own unstructured `Task` (see
+/// `CaptureSession.handleVideoFrame`), and nothing sequences those Tasks against each
+/// other, so a later frame's Task can reach us first. `consider` below defends the
+/// ordering itself, by dropping any frame whose timestamp doesn't strictly advance.
 /// Second — and this is the load-bearing one — `CaptureSession`'s `outputQueue` is a
 /// *serial* queue shared by the system-audio and screen-frame handlers, so CoreImage and
 /// file work must never run on it: ScreenCaptureKit sheds samples when a client's handler
@@ -51,9 +51,10 @@ public actor SlideRecorder {
     /// presentation content. Call in time order, once per sampled frame.
     public func consider(_ pixelBuffer: CVPixelBuffer, at t: TimeInterval) {
         // Defense-in-depth for SlideChangeDetector's "call in time order" precondition:
-        // the call site awaits a variable-latency Vision OCR before reaching us (see the
-        // type's doc comment above), so an earlier frame's Task can be overtaken by a
-        // later one's. This is expected under load, not an error — drop and move on.
+        // the call site spawns one unstructured Task per sampled frame and nothing
+        // sequences them (see the type's doc comment above), so an earlier frame's Task
+        // can be overtaken by a later one's. Expected under load, not an error — drop
+        // and move on.
         if let lastConsideredTime, t <= lastConsideredTime {
             Self.log.info(
                 "Dropping an out-of-order frame at \(t, privacy: .public)s (last considered was \(lastConsideredTime, privacy: .public)s)."

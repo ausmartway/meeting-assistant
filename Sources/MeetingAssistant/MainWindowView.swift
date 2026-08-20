@@ -899,7 +899,10 @@ private struct TurnView: View {
 /// needs to observe it — it just has to survive across re-renders so a re-render
 /// doesn't re-read every visible slide from disk (R28 reading view is re-rendered
 /// often; see `TranscriptReadingView`'s `slideImageCache` doc comment). No
-/// eviction: the 300-keyframe cap already bounds worst case.
+/// eviction, and the cache outlives a single meeting: SwiftUI keeps this `@State` slot
+/// while the detail pane stays mounted, so browsing several slide-heavy meetings in one
+/// session accumulates their images. Bounded in practice by 300 keyframes per meeting
+/// times the meetings actually opened; revisit if that proves to matter.
 private final class SlideImageCache {
     private var images: [URL: NSImage] = [:]
 
