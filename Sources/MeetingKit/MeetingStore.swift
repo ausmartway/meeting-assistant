@@ -8,6 +8,9 @@ import Foundation
 ///     ├── recording.json     (MeetingRecording metadata + speaker timeline)
 ///     ├── mic.wav            (local user audio)
 ///     ├── system.wav         (remote participants audio)
+///     ├── speakers.json      (per-meeting diarization map, for renaming without re-diarizing)
+///     ├── segments.json      (fused, labeled segments, for exact per-line playback)
+///     ├── slides/            (captured shared-screen keyframes, R28)
 ///     └── transcript.md      (written after processing)
 public final class MeetingStore {
     private let root: URL

@@ -23,7 +23,7 @@ public enum TranscriptParser {
     /// break per-line audio playback (R27).
     public struct Slide: Equatable, Sendable {
         public let time: String  // "00:00:30", as written in the document
-        public let file: String  // bundle-relative, e.g. "slides/slide-0030.jpg"
+        public let file: String  // bundle-relative, e.g. "slides/slide-00030.jpg"
         /// Index of the turn this slide follows; `-1` when it precedes all speech.
         public let afterTurnIndex: Int
         public init(time: String, file: String, afterTurnIndex: Int) {
