@@ -2,8 +2,7 @@ cask "meeting-assistant" do
   version "0.5.0"
   sha256 "6906de427ad83dd95aeeb6f8fab07b8852bbc3f6c4853bbd166cdd1b4702bf61"
 
-  url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg",
-      verified: "github.com/ausmartway/meeting-assistant/"
+  url "https://github.com/ausmartway/meeting-assistant/releases/download/v#{version}/MeetingAssistant.dmg"
   name "Meeting Assistant"
   desc "Menu-bar app that auto-captures and locally transcribes meetings"
   homepage "https://github.com/ausmartway/meeting-assistant"
